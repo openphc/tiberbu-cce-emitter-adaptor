@@ -1,0 +1,42 @@
+# === Java ===
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+
+# === Gradle ===
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# === IDE ===
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+*.swp
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Logs ===
+*.log
+
+# === Misc ===
+hs_err_pid*
+replay_pid*
+
+# === Project-specific (not tracked in PR #1) ===
+artifacts/
+bin/
+.claude/
+
+load-test/
+scripts/
