@@ -129,7 +129,8 @@ org.openphc.tiberbu.cce.emitter/
 │   ├── RestClientConfig.java                      #   @Bean RestClient for the CCE Collector
 │   ├── RetryConfig.java                           #   Spring Retry configuration
 │   ├── CollectorProperties.java                   #   @ConfigurationProperties for cce.collector.*
-│   └── EmitterProperties.java                     #   @ConfigurationProperties for cce.emitter.* (source routing)
+│   ├── EmitterProperties.java                     #   @ConfigurationProperties for cce.emitter.* (source identity)
+│   └── EmitterStartupValidator.java               #   Fail-fast on missing cce.emitter.source; logs resolved config
 │
 ├── controller/                                    # Spring MVC controllers
 │   └── InboundEventController.java                #   @RestController: POST /inbound
