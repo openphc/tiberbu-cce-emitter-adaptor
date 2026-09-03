@@ -1,0 +1,48 @@
+# Local development stack for the tibERbu CCE Emitter Adaptor.
+#
+# Runs the adaptor plus a WireMock stub standing in for the CCE Collector.
+# In a real deployment tibERbu's call is authenticated and routed by the CCE
+# Gateway before it reaches /inbound; locally you post to the adaptor directly.
+#
+# Usage:
+# Container names are left to Compose (<project>-<service>-<n>). Hardcoding
+# them collides with the sibling emitter adaptors in this workspace, which use
+# the same stub name.
+#
+#   docker compose up -d      # Start both services
+#   docker compose logs -f    # Follow logs
+#   docker compose down       # Stop and remove containers
+
+services:
+  # ==================== CCE Collector stub (WireMock) ====================
+  collector-stub:
+    image: wiremock/wiremock:3.9.2
+    ports:
+      - "5055:8080"
+    volumes:
+      - ./wiremock:/home/wiremock
+    command: ["--verbose"]
+    restart: unless-stopped
+
+  # ==================== tibERbu CCE Emitter Adaptor ====================
+  tiberbu-cce-emitter-adaptor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SERVER_PORT=8081
+      - CCE_COLLECTOR_URL=http://collector-stub:8080
+      - FACILITY_FILTER_IDS=          # empty = filter inactive
+    depends_on:
+      collector-stub:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health/liveness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped

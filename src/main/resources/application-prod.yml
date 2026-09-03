@@ -1,0 +1,34 @@
+# Production profile — env-var driven config
+
+server:
+  port: ${SERVER_PORT:8080}
+
+cce:
+  collector:
+    url: ${CCE_COLLECTOR_URL}
+    events-path: ${CCE_COLLECTOR_EVENTS_PATH:/v1/events}
+    timeout: ${CCE_COLLECTOR_TIMEOUT:5000}
+    retry:
+      max-attempts: ${CCE_COLLECTOR_RETRY_MAX_ATTEMPTS:3}
+      backoff-ms: ${CCE_COLLECTOR_RETRY_BACKOFF_MS:1000}
+    auth:
+      token: ${CCE_COLLECTOR_AUTH_TOKEN:}
+      keycloak-host: ${KEYCLOAK_HOST:}
+      realm: ${KEYCLOAK_REALM:cce}
+      client-id: ${KEYCLOAK_CLIENT_ID:}
+      client-secret: ${KEYCLOAK_CLIENT_SECRET:}
+  emitter:
+    source: ${EMITTER_SOURCE:tiberbu}
+    patient-identifier-system: ${PATIENT_IDENTIFIER_SYSTEM:http://openphc.org/identifier/upid}
+    facility-filter:
+      ids: ${FACILITY_FILTER_IDS:}   # empty = filter inactive; comma-separated to restrict
+
+management:
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    org.openphc.tiberbu.cce: INFO
+    org.springframework.web: WARN

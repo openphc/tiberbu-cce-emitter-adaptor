@@ -1,0 +1,25 @@
+# Development profile — DEBUG logging, local Collector stub
+
+server:
+  port: ${SERVER_PORT:8080}
+
+cce:
+  collector:
+    url: ${CCE_COLLECTOR_URL:http://localhost:5055}
+    events-path: /v1/events
+    timeout: 5000
+    retry:
+      max-attempts: 3
+      backoff-ms: 1000
+    auth:
+      token: dev-token
+  emitter:
+    source: tiberbu
+    patient-identifier-system: "http://openphc.org/identifier/upid"
+    facility-filter:
+      ids: ${FACILITY_FILTER_IDS:}   # empty = filter inactive
+
+logging:
+  level:
+    org.openphc.tiberbu.cce: DEBUG
+    org.springframework.web: DEBUG

@@ -1,0 +1,21 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPattern": "/v1/events"
+  },
+  "response": {
+    "status": 202,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "data": {
+        "eventId": "{{randomValue type='UUID'}}",
+        "status": "accepted",
+        "correlationId": "corr-{{randomValue type='UUID'}}",
+        "timestamp": "{{now}}"
+      }
+    },
+    "transformers": ["response-template"]
+  }
+}

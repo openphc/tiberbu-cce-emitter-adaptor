@@ -47,8 +47,9 @@ emitter-adaptor/
 ├── gradle/
 │   └── wrapper/                  # Wrapper JAR + properties
 ├── wiremock/
+│   ├── __files/                  # WireMock response body files (unused so far)
 │   └── mappings/                 # WireMock stub mappings for Docker Compose
-│       └── collector-events-accepted.json
+│       └── collector-events.json
 ├── src/
 │   ├── main/
 │   │   ├── java/org/openphc/tiberbu/cce/emitter/
@@ -99,41 +100,52 @@ java {
     }
 }
 
+configurations {
+    compileOnly {
+        extendsFrom(configurations.annotationProcessor.get())
+    }
+}
+
 repositories {
     mavenCentral()
 }
 
 val hapiFhirVersion = "7.4.0"
+val wiremockVersion = "3.9.2"
 
 dependencies {
-    // Spring Boot Starters
+    // Spring Boot starters
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-validation")
 
-    // Spring Retry
+    // Spring Retry — Collector forwarding backoff
     implementation("org.springframework.retry:spring-retry")
     implementation("org.springframework:spring-aspects")
 
-    // HAPI FHIR
+    // HAPI FHIR — R4 parsing of bundle entries
     implementation("ca.uhn.hapi.fhir:hapi-fhir-base:$hapiFhirVersion")
     implementation("ca.uhn.hapi.fhir:hapi-fhir-structures-r4:$hapiFhirVersion")
 
     // Observability
     implementation("io.micrometer:micrometer-registry-prometheus")
 
-    // Lombok (optional but recommended)
+    // Lombok
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
 
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("org.wiremock:wiremock-standalone:3.9.2")
+    testImplementation("org.wiremock:wiremock-standalone:$wiremockVersion")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
+    archiveBaseName = "tiberbu-cce-emitter-adaptor"
 }
 ```
 
@@ -169,15 +181,13 @@ Only the Consent and Observation entries should be processed as events.
 
 ```yaml
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
   servlet:
     context-path: /
 
 spring:
   application:
     name: tiberbu-cce-emitter-adaptor
-  profiles:
-    active: dev
 
 # CCE Collector Configuration
 cce:
@@ -242,17 +252,23 @@ logging:
 ```yaml
 cce:
   collector:
-    url: http://localhost:5001
+    url: ${CCE_COLLECTOR_URL:http://localhost:5055}   # the docker-compose stub
     auth:
       token: dev-token
   emitter:
     source: tiberbu
     patient-identifier-system: "http://openphc.org/identifier/upid"
+    facility-filter:
+      ids: ${FACILITY_FILTER_IDS:}
 
 logging:
   level:
     org.openphc.tiberbu.cce: DEBUG
+    org.springframework.web: DEBUG
 ```
+
+> No `spring.profiles.active` is set in `application.yml` — select a profile
+> explicitly with `SPRING_PROFILES_ACTIVE` or `--spring.profiles.active`.
 
 ### application-prod.yml
 
@@ -298,7 +314,6 @@ services:
   # CCE Collector Stub (WireMock)
   collector-stub:
     image: wiremock/wiremock:3.9.2
-    container_name: cce-collector-stub
     ports:
       - "5055:8080"
     volumes:
@@ -307,16 +322,32 @@ services:
 
   # tibERbu CCE Emitter Adaptor
   tiberbu-cce-emitter-adaptor:
-    build: .
-    container_name: tiberbu-cce-emitter-adaptor
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8081:8081"
     environment:
       - SPRING_PROFILES_ACTIVE=dev
       - SERVER_PORT=8081
       - CCE_COLLECTOR_URL=http://collector-stub:8080
-      - FACILITY_FILTER_IDS=0234,0030   # comma-separated; empty or omit = filter inactive
+      - FACILITY_FILTER_IDS=          # empty = filter inactive
+    depends_on:
+      collector-stub:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health/liveness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
 ```
+
+> **Container names:** none are pinned. Compose derives them as
+> `<project>-<service>-<n>`, which keeps the stack from colliding with the
+> sibling emitter adaptors in the same workspace — they publish a Collector stub
+> under the same name.
 
 > **Facility filter tip:** `FACILITY_FILTER_IDS` is the only env var needed to control which facility IDs are admitted. Update it and do a rolling restart — no rebuild required. Skipped events return `200 OK` with `status: "skipped"` — a normal outcome, not an error, so callers should not retry.
 

@@ -1,0 +1,63 @@
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: tiberbu-cce-emitter-adaptor
+
+# CCE Collector Configuration
+cce:
+  collector:
+    url: http://localhost:5001
+    events-path: /v1/events
+    timeout: 5000
+    retry:
+      max-attempts: 3
+      backoff-ms: 1000
+    auth:
+      token: local-dev-token
+      keycloak-host:
+      realm:
+      client-id:
+      client-secret:
+  emitter:
+    source: tiberbu
+    patient-identifier-system: "http://openphc.org/identifier/upid"
+    facility-filter:
+      ids: ${FACILITY_FILTER_IDS:}  # Set via env var: FACILITY_FILTER_IDS=0234,0030 (comma-separated, empty = all pass)
+
+# Actuator & Metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: tiberbu-cce-emitter-adaptor
+
+# Logging
+logging:
+  level:
+    org.openphc.tiberbu.cce: DEBUG
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{ISO8601} [%thread] %-5level %logger{36} - %msg%n"
