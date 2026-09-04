@@ -15,7 +15,6 @@ cce:
       token: dev-token
   emitter:
     source: tiberbu
-    patient-identifier-system: "http://openphc.org/identifier/upid"
     facility-filter:
       ids: ${FACILITY_FILTER_IDS:}   # empty = filter inactive
 

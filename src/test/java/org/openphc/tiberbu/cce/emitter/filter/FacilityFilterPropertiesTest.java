@@ -88,6 +88,28 @@ class FacilityFilterPropertiesTest {
     }
 
     @Test
+    @DisplayName("matching is case-insensitive on both the allowlist and the inbound ID")
+    void matchingIsCaseInsensitive() {
+        FacilityFilterProperties props = FacilityFilterProperties.of(List.of("ABC-123", "0030"));
+
+        assertThat(props.ids()).containsExactly("abc-123", "0030");
+        assertThat(props.admits("abc-123")).isTrue();
+        assertThat(props.admits("ABC-123")).isTrue();
+        assertThat(props.admits("Abc-123")).isTrue();
+        assertThat(props.admits("0030")).isTrue();
+        assertThat(props.admits("xyz-999")).isFalse();
+    }
+
+    @Test
+    @DisplayName("a blank facility ID passes like an absent one")
+    void blankFacilityIdPasses() {
+        FacilityFilterProperties props = FacilityFilterProperties.of(List.of("0030"));
+
+        assertThat(props.admits("")).isTrue();
+        assertThat(props.admits("   ")).isTrue();
+    }
+
+    @Test
     @DisplayName("an event with no resolvable facility passes even when the filter is active")
     void unknownFacilityAlwaysPasses() {
         FacilityFilterProperties props = FacilityFilterProperties.of(List.of("0030"));

@@ -9,16 +9,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * under the same prefix but binds separately — see
  * {@link org.openphc.tiberbu.cce.emitter.filter.FacilityFilterProperties}.
  *
- * @param source                  the CloudEvents {@code source} attribute stamped on every
- *                                emitted event. Fixed by configuration — this adaptor serves a
- *                                single source system and performs no per-request resolution.
- *                                Validated at startup by {@link EmitterStartupValidator}
- * @param patientIdentifierSystem the FHIR identifier system used to pick the patient UPID out of
- *                                a {@code Patient.identifier} list
+ * @param source the CloudEvents {@code source} attribute stamped on every
+ *               emitted event. Fixed by configuration — this adaptor serves a
+ *               single source system and performs no per-request resolution.
+ *               Validated at startup by {@link EmitterStartupValidator}
  */
 @ConfigurationProperties(prefix = "cce.emitter")
-public record EmitterProperties(
-        String source,
-        String patientIdentifierSystem
-) {
+public record EmitterProperties(String source) {
 }

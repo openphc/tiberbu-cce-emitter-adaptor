@@ -145,7 +145,7 @@ org.openphc.tiberbu.cce.emitter/
 ├── fhir/                                          # FHIR utilities
 │   ├── FhirResourceParser.java                    #   HAPI FHIR parse (uses FhirContext.forR4())
 │   ├── FacilityIdExtractor.java                   #   Extract facility ID from any FHIR resource location field (Encounter, ServiceRequest, Procedure, Immunization, etc.)
-│   └── PatientIdExtractor.java                    #   Extract patient UPID from FHIR resources
+│   └── PatientIdExtractor.java                    #   Extract patient identifier from FHIR resources
 │
 ├── filter/                                        # Facility filter
 │   ├── FacilityFilter.java                        #   Spring bean: enforceFilter() — throws on deny, increments counter
@@ -158,7 +158,7 @@ org.openphc.tiberbu.cce.emitter/
 │
 ├── model/                                         # DTOs
 │   ├── CloudEventDto.java                         #   CloudEvents v1.0 output DTO
-│   ├── InboundRequest.java                        #   Wraps incoming HTTP body + headers
+│   ├── InboundRequest.java                        #   Wraps incoming HTTP body + lowercased headers
 │   ├── SourceMetadata.java                        #   sourceIdentifier, facilityId, sourceEventId
 │   ├── TransformationResult.java                  #   Per-event success/failure detail
 │   ├── InboundOutcome.java                        #   HTTP status + body returned to the controller
@@ -168,7 +168,7 @@ org.openphc.tiberbu.cce.emitter/
 │
 ├── exception/                                     # Custom exceptions
 │   ├── FhirMappingException.java                  #   FHIR parsing failures → 422
-│   ├── PatientIdNotFoundException.java            #   Patient UPID not extractable → 400
+│   ├── PatientIdNotFoundException.java            #   Patient identifier not extractable → 400
 │   ├── FacilityFilterRejectedException.java       #   Facility filter denial → caught in InboundEventService → 200 skipped
 │   ├── CollectorForwardingException.java          #   Retryable Collector errors (5xx/timeout) → 502
 │   ├── CollectorClientException.java              #   Non-retryable Collector errors (4xx)
@@ -221,7 +221,7 @@ Single `@Component` that reads `cce.emitter.source` config and transforms FHIR R
 | 1 | `InboundEventController` | Receives HTTP POST, creates `InboundRequest`, delegates to `InboundEventService`, maps the returned `InboundOutcome` onto status + JSON body |
 | 2 | `InboundEventService.process()` | Orchestrates the full pipeline (steps 3–5), returns `InboundOutcome` |
 | 3 | `SourceAdaptorService.adapt()` | Parses `resource` as a FHIR Bundle, skips `entry[0]` (patient), iterates `entry[1..n]` as candidate events |
-| 4 | `SourceAdaptorService.adapt()` | Per entry: extracts patient UPID, resolves facility ID, applies the facility filter (throws `FacilityFilterRejectedException` on denial → 200 `skipped`), stamps `cce.emitter.source`, builds `List<CloudEventDto>` |
+| 4 | `SourceAdaptorService.adapt()` | Per entry: extracts patient identifier, resolves facility ID, applies the facility filter (throws `FacilityFilterRejectedException` on denial → 200 `skipped`), stamps `cce.emitter.source`, builds `List<CloudEventDto>` |
 | 5 | `CollectorForwardingService.forward()` | POSTs each CloudEvent to Collector via `RestClient`; `@Retryable` on 5xx |
 
 ## 8. External Interfaces
@@ -262,7 +262,7 @@ Errors are handled by `GlobalExceptionHandler` (`@ControllerAdvice`):
 | Payload yields no events (`resource` not a Bundle, empty `entry[]`, or patient entry only) | Log debug + silently ignore | 200 OK with `status: "ignored"` |
 | Facility filter denied (facility not in configured list) | Log + acknowledge | 200 OK with `status: "skipped"` |
 | FHIR resource unparseable | Log + reject | 422 with `FHIR_MAPPING_ERROR` |
-| Patient UPID not extractable | Log + reject | 400 with `PATIENT_ID_NOT_FOUND` |
+| Patient identifier not extractable | Log + reject | 400 with `PATIENT_ID_NOT_FOUND` |
 | Collector returns 400 | Log + return error | 400 (non-retryable) |
 | Collector returns 422 | Log + return error | 422 (non-retryable) |
 | Collector returns 200 (duplicate) | Log + return success | 200 (idempotent) |
@@ -345,10 +345,10 @@ Registered in `InboundEventService` and `CollectorForwardingService` via constru
 
 | MDC Key | Source | Description |
 |---------|--------|-------------|
-| `correlationId` | `X-Correlation-Id` header, or generated | Trace correlation ID |
+| `correlationId` | Adaptor-generated | Trace correlation ID |
 | `source` | Resolved source key | Source system identifier (e.g., `"tiberbu"`) |
 | `eventType` | FHIR `resourceType` | CloudEvents `type` field |
-| `subject` | Patient UPID | Patient identifier for the event |
+| `subject` | Patient identifier | Identifies the patient for the event |
 
 ### Logback Configuration (`logback-spring.xml`)
 

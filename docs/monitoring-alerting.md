@@ -127,7 +127,7 @@ groups:
         annotations:
           summary: "CCE Emitter facility filter denying >50% of events"
           description: "More than 50% of events are being skipped by the facility filter for >5 minutes. May indicate a misconfigured allowlist or missing facility IDs."
-          runbook: "Check FACILITY_FILTER_IDS env var. Use topk Prometheus query to identify which facilities are being skipped. Verify tibERbu is sending the X-Facility-Id header."
+          runbook: "Check FACILITY_FILTER_IDS env var. Use topk Prometheus query to identify which facilities are being skipped. Verify the FHIR resource carries a resolvable facility/location field."
 
       # No events received for extended period (during business hours)
       - alert: TiberbuCceEmitterNoEventsReceived
@@ -242,7 +242,7 @@ Every log line during event processing includes these MDC fields:
 | `correlationId` | `7f3c9b12-4d5e-4a6b-8c7d-9e0f1a2b3c4d` | Trace a single request across services |
 | `source` | `tiberbu` | Filter by source system |
 | `eventType` | `Consent` | Filter by FHIR resource type |
-| `subject` | `KE-SHRP-170CDF0A-1363-4972-B36A` | Filter by patient UPID |
+| `subject` | `KE-SHRP-170CDF0A-1363-4972-B36A` | Filter by patient identifier |
 
 ## 6. Health Check Monitoring
 

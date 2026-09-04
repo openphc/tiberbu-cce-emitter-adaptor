@@ -206,7 +206,6 @@ cce:
       client-secret:
   emitter:
     source: tiberbu
-    patient-identifier-system: "http://openphc.org/identifier/upid"
     facility-filter:
       ids: ${FACILITY_FILTER_IDS:}  # Set via env var: FACILITY_FILTER_IDS=0234,0030 (comma-separated, empty = all pass)
 
@@ -257,7 +256,6 @@ cce:
       token: dev-token
   emitter:
     source: tiberbu
-    patient-identifier-system: "http://openphc.org/identifier/upid"
     facility-filter:
       ids: ${FACILITY_FILTER_IDS:}
 
@@ -441,8 +439,6 @@ curl -s http://localhost:8080/actuator/prometheus | grep cce_emitter
 ```bash
 curl -X POST http://localhost:8080/inbound \
   -H "Content-Type: application/json" \
-  -H "X-Facility-Id: FAC-FOSA-001" \
-  -H "X-Source-Event-Id: VCR-20260901-57098420" \
   -d '{
     "meta": {
       "resourceType": "Bundle",

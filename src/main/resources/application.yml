@@ -24,7 +24,6 @@ cce:
       client-secret:
   emitter:
     source: tiberbu
-    patient-identifier-system: "http://openphc.org/identifier/upid"
     facility-filter:
       ids: ${FACILITY_FILTER_IDS:}  # Set via env var: FACILITY_FILTER_IDS=0234,0030 (comma-separated, empty = all pass)
 

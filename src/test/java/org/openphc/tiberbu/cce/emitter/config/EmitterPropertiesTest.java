@@ -20,16 +20,10 @@ class EmitterPropertiesTest {
     }
 
     @Test
-    void bindsSourceAndPatientIdentifierSystem() {
-        runner.withPropertyValues(
-                "cce.emitter.source=tiberbu",
-                "cce.emitter.patient-identifier-system=http://openphc.org/identifier/upid"
-        ).run(context -> {
-            EmitterProperties props = context.getBean(EmitterProperties.class);
-            assertThat(props.source()).isEqualTo("tiberbu");
-            assertThat(props.patientIdentifierSystem())
-                    .isEqualTo("http://openphc.org/identifier/upid");
-        });
+    void bindsSource() {
+        runner.withPropertyValues("cce.emitter.source=tiberbu")
+                .run(context -> assertThat(context.getBean(EmitterProperties.class).source())
+                        .isEqualTo("tiberbu"));
     }
 
     @Test

@@ -19,7 +19,6 @@ cce:
       client-secret: ${KEYCLOAK_CLIENT_SECRET:}
   emitter:
     source: ${EMITTER_SOURCE:tiberbu}
-    patient-identifier-system: ${PATIENT_IDENTIFIER_SYSTEM:http://openphc.org/identifier/upid}
     facility-filter:
       ids: ${FACILITY_FILTER_IDS:}   # empty = filter inactive; comma-separated to restrict
 
