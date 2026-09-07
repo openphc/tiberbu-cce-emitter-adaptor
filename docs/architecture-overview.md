@@ -125,7 +125,7 @@ org.openphc.tiberbu.cce.emitter/
 ├── CceEmitterAdaptorApplication.java             # @SpringBootApplication entry point
 │
 ├── config/                                        # Spring configuration
-│   ├── FhirConfig.java                            #   @Bean FhirContext.forR4() singleton
+│   ├── FhirConfig.java                            #   @Bean FhirContext.forR4() singleton (IParser is created per call, not shared)
 │   ├── RestClientConfig.java                      #   @Bean RestClient for the CCE Collector
 │   ├── RetryConfig.java                           #   Spring Retry configuration
 │   ├── CollectorProperties.java                   #   @ConfigurationProperties for cce.collector.*
@@ -143,7 +143,9 @@ org.openphc.tiberbu.cce.emitter/
 │   └── EventIdGenerator.java                      #   Deterministic ID from source + sourceEventId
 │
 ├── fhir/                                          # FHIR utilities
-│   ├── FhirResourceParser.java                    #   HAPI FHIR parse (uses FhirContext.forR4())
+│   ├── BundleEntryExtractor.java                  #   Bundle-first extraction: skip entry[0], yield entry[1..n] as BundleEntry
+│   ├── BundleEntry.java                           #   (index, resourceJson, resourceType) for one extracted entry
+│   ├── FhirResourceParser.java                    #   HAPI FHIR parse of one entry's resourceJson (fresh IParser per call)
 │   ├── FacilityIdExtractor.java                   #   Extract facility ID from any FHIR resource location field (Encounter, ServiceRequest, Procedure, Immunization, etc.)
 │   └── PatientIdExtractor.java                    #   Extract patient identifier from FHIR resources
 │
