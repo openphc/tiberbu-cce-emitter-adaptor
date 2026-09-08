@@ -20,7 +20,7 @@ import java.util.Set;
  * before binding can preserve it. Write {@code ids: ["0030"]} instead.
  *
  * <p>Matching is case-insensitive: IDs are lowercased on both sides of the
- * comparison, so a configured {@code abc-123} still admits an inbound
+ * comparison, so a configured {@code abc-123} still passes an inbound
  * {@code ABC-123}. Numeric facility codes are unaffected.
  *
  * @param ids allowed facility IDs. Normalized to an immutable, trimmed,
@@ -32,19 +32,19 @@ import java.util.Set;
 public record FacilityFilterProperties(Set<String> ids) {
 
     public FacilityFilterProperties {
-        ids = normalize(ids);
+        ids = normalizeFacilityIds(ids);
     }
 
     /**
      * @return an instance holding the given raw IDs, normalized
      */
-    public static FacilityFilterProperties of(Collection<String> rawIds) {
-        return new FacilityFilterProperties(rawIds == null ? null : new LinkedHashSet<>(rawIds));
+    public static FacilityFilterProperties of(Collection<String> rawFacilityIds) {
+        return new FacilityFilterProperties(rawFacilityIds == null ? null : new LinkedHashSet<>(rawFacilityIds));
     }
 
     /**
      * @return {@code true} when at least one ID is configured. An inactive filter
-     *         admits every event, which is the default
+     *         passes every event through, which is the default
      */
     public boolean isActive() {
         return !ids.isEmpty();
@@ -53,29 +53,30 @@ public record FacilityFilterProperties(Set<String> ids) {
     /**
      * @param facilityId the resolved facility ID, may be {@code null} or blank
      * @return {@code true} when the filter is inactive, the facility is unknown
-     *         (there is nothing to filter on), or the ID is on the allowlist
+     *         (there is nothing to filter on), or the ID is on the allowlist —
+     *         i.e. this event should be let through, not denied
      */
-    public boolean admits(String facilityId) {
+    public boolean isFacilityAllowed(String facilityId) {
         if (!isActive() || facilityId == null || facilityId.isBlank()) {
             return true;
         }
-        return ids.contains(normalizeId(facilityId));
+        return ids.contains(normalizeFacilityId(facilityId));
     }
 
-    private static Set<String> normalize(Set<String> raw) {
-        if (raw == null || raw.isEmpty()) {
+    private static Set<String> normalizeFacilityIds(Set<String> configuredFacilityIds) {
+        if (configuredFacilityIds == null || configuredFacilityIds.isEmpty()) {
             return Set.of();
         }
-        Set<String> normalizedIds = new LinkedHashSet<>();
-        for (String configuredId : raw) {
-            if (configuredId != null && !configuredId.isBlank()) {
-                normalizedIds.add(normalizeId(configuredId));
+        Set<String> normalizedFacilityIds = new LinkedHashSet<>();
+        for (String configuredFacilityId : configuredFacilityIds) {
+            if (configuredFacilityId != null && !configuredFacilityId.isBlank()) {
+                normalizedFacilityIds.add(normalizeFacilityId(configuredFacilityId));
             }
         }
-        return Collections.unmodifiableSet(normalizedIds);
+        return Collections.unmodifiableSet(normalizedFacilityIds);
     }
 
-    private static String normalizeId(String facilityId) {
+    private static String normalizeFacilityId(String facilityId) {
         return facilityId.trim().toLowerCase(Locale.ROOT);
     }
 }

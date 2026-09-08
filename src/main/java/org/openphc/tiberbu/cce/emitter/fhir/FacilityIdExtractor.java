@@ -33,8 +33,8 @@ import java.util.List;
  * this resource type), with the {@code "Organization/"} prefix stripped.
  *
  * <p>Never throws: a resource with no {@code organization} reference resolves
- * to {@code null}, which {@code FacilityFilterProperties.admits()} already
- * treats as "always admit."
+ * to {@code null}, which {@code FacilityFilterProperties.isFacilityAllowed()}
+ * already treats as "always admit."
  */
 @Component
 public class FacilityIdExtractor {

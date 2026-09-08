@@ -29,7 +29,7 @@ class FacilityFilterPropertiesTest {
             FacilityFilterProperties props = context.getBean(FacilityFilterProperties.class);
             assertThat(props.ids()).isEmpty();
             assertThat(props.isActive()).isFalse();
-            assertThat(props.admits("anything")).isTrue();
+            assertThat(props.isFacilityAllowed("anything")).isTrue();
         });
 
         runner.withPropertyValues("cce.emitter.facility-filter.ids=")
@@ -67,8 +67,8 @@ class FacilityFilterPropertiesTest {
                     assertThat(props.ids()).contains("0030", "0234");
                     // The trap this guards: an unquoted YAML 0030 arrives as "30"
                     assertThat(props.ids()).doesNotContain("30", "234");
-                    assertThat(props.admits("0030")).isTrue();
-                    assertThat(props.admits("30")).isFalse();
+                    assertThat(props.isFacilityAllowed("0030")).isTrue();
+                    assertThat(props.isFacilityAllowed("30")).isFalse();
                 });
     }
 
@@ -93,11 +93,11 @@ class FacilityFilterPropertiesTest {
         FacilityFilterProperties props = FacilityFilterProperties.of(List.of("ABC-123", "0030"));
 
         assertThat(props.ids()).containsExactly("abc-123", "0030");
-        assertThat(props.admits("abc-123")).isTrue();
-        assertThat(props.admits("ABC-123")).isTrue();
-        assertThat(props.admits("Abc-123")).isTrue();
-        assertThat(props.admits("0030")).isTrue();
-        assertThat(props.admits("xyz-999")).isFalse();
+        assertThat(props.isFacilityAllowed("abc-123")).isTrue();
+        assertThat(props.isFacilityAllowed("ABC-123")).isTrue();
+        assertThat(props.isFacilityAllowed("Abc-123")).isTrue();
+        assertThat(props.isFacilityAllowed("0030")).isTrue();
+        assertThat(props.isFacilityAllowed("xyz-999")).isFalse();
     }
 
     @Test
@@ -105,8 +105,8 @@ class FacilityFilterPropertiesTest {
     void blankFacilityIdPasses() {
         FacilityFilterProperties props = FacilityFilterProperties.of(List.of("0030"));
 
-        assertThat(props.admits("")).isTrue();
-        assertThat(props.admits("   ")).isTrue();
+        assertThat(props.isFacilityAllowed("")).isTrue();
+        assertThat(props.isFacilityAllowed("   ")).isTrue();
     }
 
     @Test
@@ -114,8 +114,8 @@ class FacilityFilterPropertiesTest {
     void unknownFacilityAlwaysPasses() {
         FacilityFilterProperties props = FacilityFilterProperties.of(List.of("0030"));
         assertThat(props.isActive()).isTrue();
-        assertThat(props.admits(null)).isTrue();
-        assertThat(props.admits("0030")).isTrue();
-        assertThat(props.admits("9999")).isFalse();
+        assertThat(props.isFacilityAllowed(null)).isTrue();
+        assertThat(props.isFacilityAllowed("0030")).isTrue();
+        assertThat(props.isFacilityAllowed("9999")).isFalse();
     }
 }
