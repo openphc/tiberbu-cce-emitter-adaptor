@@ -41,15 +41,15 @@ POST /inbound
 > **Note:** Facility ID is resolved from the FHIR resource (`FacilityIdExtractor`). The CloudEvent
 > `correlationid` is adaptor-generated. The source is fixed by `cce.emitter.source`.
 
-**Body:** TibERbu payloads always arrive as a wrapper object with two top-level keys — `meta` (transport envelope) and `resource` (the FHIR Bundle itself, `resourceType: "Bundle"`). Bundle entries live at `resource.entry[]`. The first entry, `resource.entry[0]`, is always the patient resource and is ignored for downstream event processing. Every subsequent entry is treated as an independent event payload and forwarded individually after the adaptor resolves facility context and applies any configured filter rules.
+**Body:** TibERbu payloads always arrive as a wrapper object with two top-level keys — `meta` (transport envelope) and `resource` (the FHIR Bundle itself, `resourceType: "Bundle"`). Bundle entries live at `resource.entry[]`. Any entry whose `resourceType` is `Patient` is ignored for downstream event processing. Every other entry is treated as an independent event payload and forwarded individually after the adaptor resolves facility context and applies any configured filter rules.
 
-**Bundle entry behavior:** the adaptor does not maintain a hardcoded allowlist of FHIR resource types. Any bundle entry after the first patient entry is treated as a candidate event payload and processed according to the normal event extraction and facility-filter rules. The patient entry itself is skipped.
+**Bundle entry behavior:** the adaptor does not maintain a hardcoded allowlist of FHIR resource types. Any bundle entry that is not a confirmed `Patient` is treated as a candidate event payload and processed according to the normal event extraction and facility-filter rules. Only a confirmed Patient entry is skipped, no matter where in the bundle it appears.
 
 **Transaction metadata:** real TibERbu bundles are `type: "transaction"`, so every entry carries a sibling `request` object (`{"method": "PUT", "url": "Consent/VCR-20260901-57098420"}`). The adaptor reads only `entry[].resource`; `entry[].request` is ignored.
 
 **`meta.source`:** the envelope's `meta.source` (e.g. `shr-mediator`) is descriptive only. It is never used for routing or attribution — the CloudEvents `source` attribute always comes from `cce.emitter.source`.
 
-> In other words, the current contract is: outer envelope with `meta` + `resource` (the Bundle itself); entries at `resource.entry[]`; `entry[0]` = patient metadata, ignore it; all later entries = event payloads to process, regardless of their specific FHIR resource type.
+> In other words, the current contract is: outer envelope with `meta` + `resource` (the Bundle itself); entries at `resource.entry[]`; any entry whose `resourceType` is `Patient` is ignored; every other entry = an event payload to process, regardless of its specific FHIR resource type.
 
 ### Response Format
 
@@ -146,7 +146,7 @@ curl -X POST http://localhost:8080/inbound \
 
 **Generated CloudEvent (sent to Collector):**
 
-`entry[0]` (the `Patient`) is skipped, so this bundle produces exactly one CloudEvent — from `entry[1]`, the `Consent`.
+`entry[0]`'s `resourceType` is `Patient`, so it is skipped; this bundle produces exactly one CloudEvent — from `entry[1]`, the `Consent`.
 
 ```json
 {
@@ -200,9 +200,9 @@ How each attribute is derived:
 }
 ```
 
-### 3.2 Patient entry is ignored; only later bundle entries are forwarded
+### 3.2 Patient entries are ignored; other bundle entries are forwarded
 
-The first bundle entry is always the patient record and is intentionally skipped. TibERbu places patient metadata at `entry[0]`; the meaningful event payloads start at `entry[1]`.
+Any bundle entry whose `resourceType` is `Patient` is intentionally skipped; the meaningful event payloads are every other entry.
 
 **Example packet layout:**
 
@@ -242,10 +242,10 @@ The contract is explicit and has three rules:
 | # | Rule |
 |---|------|
 | 1 | `resource` is **always** a FHIR `Bundle` — no other top-level resource type is expected |
-| 2 | `resource.entry[0]` is **always** the patient resource, and is ignored |
-| 3 | `resource.entry[1..n]` are event payloads, each forwarded to the Collector as an individual CloudEvent |
+| 2 | Any entry whose `resourceType` is `Patient` is ignored |
+| 3 | Every other entry is an event payload, each forwarded to the Collector as an individual CloudEvent |
 
-Rule 3 has no resource-type allowlist: whatever FHIR resource sits at `entry[1..n]` — `Consent`, `Observation`, `Encounter`, `ServiceRequest` — is processed the same way.
+Rule 3 has no resource-type allowlist: whatever FHIR resource sits at these entries — `Consent`, `Observation`, `Encounter`, `ServiceRequest` — is processed the same way.
 
 > **Not the contract:** a bare top-level Bundle (no `meta` / `resource` wrapper) is not what TibERbu sends. Such a body has no `resource.entry[]` and falls into scenario 2 of [§4.2](#42-non-processable-payload-200--silently-ignored) — `200 ignored`.
 
@@ -279,8 +279,8 @@ This adaptor serves a single source system and applies **no source-level filter*
 | 1 | Body is not JSON, or is not the TibERbu envelope | empty body, plain text, form-encoded data |
 | 2 | `resource` is absent, or is not a FHIR `Bundle` | `{"meta": {...}}` with no `resource` |
 | 3 | `resource.entry[]` is absent or empty | `{"meta": {...}, "resource": {"resourceType": "Bundle", "entry": []}}` |
-| 4 | The bundle carries **only** the patient entry | `entry[0]` is `Patient` and there is nothing after it |
-| 5 | Every entry after `entry[0]` is missing its `resource` object | entries that carry only `request` |
+| 4 | The bundle carries **only** confirmed Patient entries | every entry's `resourceType` is `Patient`, so nothing remains to forward |
+| 5 | Every remaining entry is missing its `resource` object | entries that carry only `request` |
 
 Scenario 4 is the one seen most often in practice — a well-formed envelope whose bundle carries only the patient entry:
 
@@ -319,7 +319,7 @@ Scenario 4 is the one seen most often in practice — a well-formed envelope who
 }
 ```
 
-`entry[0]` is skipped, nothing follows it, so no CloudEvent is produced and the adaptor answers `200 ignored`. Note that an empty `meta` block has no bearing on the outcome — `meta` is never read for processing decisions.
+`entry[0]`'s `resourceType` is `Patient`, so it is skipped; nothing follows it, so no CloudEvent is produced and the adaptor answers `200 ignored`. Note that an empty `meta` block has no bearing on the outcome — `meta` is never read for processing decisions.
 
 ```json
 {

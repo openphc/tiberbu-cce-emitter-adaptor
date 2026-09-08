@@ -15,7 +15,7 @@ flowchart LR
     subgraph "tibERbu CCE Emitter Adaptor (Spring Boot)"
         CTRL[InboundEvent<br/>Controller]
         SA[SourceAdaptor<br/>Service]
-        IGN["Skip Patient<br/>entry[0]"]
+        IGN["Skip any<br/>Patient entry"]
         PARSE[Parse remaining<br/>bundle entries]
         NORM[CloudEvent<br/>Builder]
         FWD["Collector<br/>Forwarding<br/>@Retryable"]
@@ -60,11 +60,11 @@ sequenceDiagram
     activate EvtSvc
 
     Note over EvtSvc: Counter: tiberbu.cce.emitter.events.received
-    Note over EvtSvc: bundle entry[0] = Patient -> ignore
+    Note over EvtSvc: any bundle entry whose resourceType is Patient is ignored
 
     EvtSvc->>Svc: adapt(inboundRequest)
     activate Svc
-    Svc->>Svc: Parse Bundle and iterate entries from index 1
+    Svc->>Svc: Parse Bundle, skip every entry confirmed to be a Patient, iterate the rest
     Svc->>Svc: buildSourceMetadata (resolve facilityId: header → FHIR fallback)
     Svc->>Svc: FacilityFilter.enforceFilter(facilityId, sourceKey)
     Note over Svc: FacilityFilterRejectedException if denied →<br/>caught by InboundEventService → 200 OK (skipped)
@@ -107,11 +107,14 @@ flowchart TD
     A[POST /inbound] --> B{"resource is a Bundle<br/>with a non-empty entry[] ?"}
 
     B -->|No| J["Non-processable payload<br/>→ 200 OK (status: ignored)"]
-    B -->|Yes| C["Skip entry[0] (Patient)"]
+    B -->|Yes| C["For every entry: resourceType<br/>= Patient?"]
 
-    C --> C2{"Any entries after entry[0] ?"}
+    C -->|Yes, for that entry| C1[Skip that entry]
+    C -->|No, for that entry| C1b[Keep it as a candidate]
+    C1 --> C2{"Any candidate entries remain,<br/>once every entry has been checked?"}
+    C1b --> C2
     C2 -->|No| J
-    C2 -->|Yes| D["Process entry[1..n] as individual events"]
+    C2 -->|Yes| D["Process candidate entries as individual events"]
     D --> E{"Facility filter pass?<br/>(no facility ID = pass)"}
 
     E -->|No| S["→ 200 OK (status: skipped)"]
@@ -183,7 +186,7 @@ flowchart TD
     A[Inbound Request] --> B{Parse OK?}
 
     B -->|No| C[GlobalExceptionHandler<br/>400/500]
-    B -->|Yes| D{"Entries after entry[0] ?"}
+    B -->|Yes| D{"Any candidate entries remain<br/>after skipping every confirmed Patient entry?"}
 
     D -->|No| E["Log debug + silently ignore<br/>→ 200 OK (ignored)"]
     D -->|Yes| F{FHIR resource valid?}

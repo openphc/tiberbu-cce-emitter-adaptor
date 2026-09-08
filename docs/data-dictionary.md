@@ -12,7 +12,7 @@ The adaptor outputs CloudEvents v1.0-compliant JSON to the CCE Collector.
 | `id` | string (UUID) | **Yes** | Generated | Unique event identifier (`UUID.randomUUID()` or deterministic hash) |
 | `source` | string (URI) | **Yes** | Adaptor | Source system identifier (e.g. `"tiberbu"`) |
 | `type` | string | **Yes** | From FHIR resource | FHIR `resourceType` value as-is (e.g., `"Consent"`, `"Observation"`, `"Encounter"`) |
-| `subject` | string | Recommended | Extracted from FHIR | Patient identifier, from the entry resource's own `subject.reference` or `patient.reference` (prefix stripped). `entry[0]` — the Patient — never reaches this extraction, since the bundle contract always skips it. Used as Kafka partition key. |
+| `subject` | string | Recommended | Extracted from FHIR | Patient identifier, from the entry resource's own `subject.reference` or `patient.reference` (prefix stripped). A `Patient` resource never reaches this extraction, since the bundle contract skips it before extraction runs. Used as Kafka partition key. |
 | `time` | string (ISO-8601) | Recommended | Adaptor | Event creation timestamp in UTC |
 | `datacontenttype` | string | Recommended | Static | Always `"application/fhir+json"` |
 | `data` | object | Recommended | From FHIR resource | FHIR R4 resource JSON |
@@ -111,9 +111,10 @@ Prefix: `cce.emitter`
 |----------|------|---------|-------------|
 | `cce.emitter.source` | String | `tiberbu` | The single source system this adaptor serves. Emitted as the CloudEvents `source` attribute; startup fails if unset. |
 
-> **No `patient-identifier-system` property.** The bundle contract always skips `entry[0]` (the Patient) — no
-> Patient resource ever reaches per-entry processing, so there is no case where a Patient's own `identifier[]`
-> needs matching. The patient identifier for every processed entry instead comes from that entry's own
+> **No `patient-identifier-system` property.** The bundle contract skips any entry whose `resourceType` is
+> `Patient`, so no Patient resource ever reaches per-entry processing, and there is no case where a Patient's
+> own `identifier[]` needs matching. The patient identifier for every processed entry instead comes from
+> that entry's own
 > `subject.reference` or `patient.reference` (see § 1.1's `subject` row above).
 
 ### 3.3 Facility Filter Properties

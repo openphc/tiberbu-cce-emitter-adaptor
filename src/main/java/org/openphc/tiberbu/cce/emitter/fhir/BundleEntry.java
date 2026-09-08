@@ -16,8 +16,7 @@ package org.openphc.tiberbu.cce.emitter.fhir;
  * }</pre>
  *
  * @param bundleEntryIndex the entry's position in {@code resource.entry[]} in the
- *                          original bundle (never {@code 0} — the patient entry at
- *                          that index is always skipped before extraction)
+ *                          original bundle
  * @param resourceJson     the entry's {@code resource} object, serialized back to
  *                          JSON exactly as received; the sibling {@code request}
  *                          object is never read and never appears here

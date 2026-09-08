@@ -57,9 +57,11 @@ import java.util.Optional;
  * <p>For that envelope, {@link #extract(String)} returns a single {@link
  * BundleEntry} — {@code bundleEntryIndex=1}, {@code resourceType="Consent"},
  * and {@code resourceJson} holding only the {@code Consent} object shown above.
- * {@code entry[0]} (the {@code Patient}) is always skipped, and the {@code
- * meta} block and every {@code request} object are read only far enough to be
- * confirmed irrelevant — their values never appear in the result.
+ * The {@code Patient} entry is skipped because its {@code resourceType} is
+ * {@code "Patient"} (see {@link #isPatientEntry}); the {@code Consent} entry
+ * is not. The {@code meta} block and every {@code request} object are read
+ * only far enough to be confirmed irrelevant — their values never appear in
+ * the result.
  *
  * <p><b>Two different {@code "resource"} keys.</b> The envelope has a
  * {@code "resource"} key at the top level, holding the FHIR Bundle itself. Each
@@ -96,8 +98,13 @@ public class BundleEntryExtractor {
     /** Key holding one FHIR resource inside a single bundle entry: {@code {"entry": [{"resource": {...}}]}}. */
     private static final String ENTRY_RESOURCE_FIELD = "resource";
 
-    /** {@code resource.entry[0]} is always the patient record and is never a candidate event. */
-    private static final int PATIENT_ENTRY_INDEX = 0;
+    /**
+     * The value a bundle entry's {@code resource.resourceType} must equal for
+     * that entry to be skipped. Checked on every entry independently — there
+     * is no assumption that the Patient entry sits at a fixed position, or
+     * that a bundle contains exactly one (or even any).
+     */
+    private static final String PATIENT_RESOURCE_TYPE_VALUE = "Patient";
 
     private final ObjectMapper objectMapper;
 
@@ -111,17 +118,18 @@ public class BundleEntryExtractor {
      * <p>{@code requestBody} is the entire HTTP body — see the class-level
      * javadoc for a full worked example. Given that example envelope, this
      * method returns a one-element list: {@code [BundleEntry(bundleEntryIndex=1,
-     * resourceType="Consent", resourceJson="{\"resourceType\":\"Consent\",...}")]}.
+     * resourceType="Consent", resourceJson="{\"resourceType\":\"Consent\",...}")]}
+     * — the {@code Patient} entry is skipped, the {@code Consent} entry is not.
      *
-     * <p>Given a bundle that holds only the patient entry —
+     * <p>Given a bundle that holds only a Patient entry —
      * {@code {"resource": {"resourceType": "Bundle", "entry": [{"resource":
      * {"resourceType": "Patient", "id": "KE-SHRP-7E93454F-6D34-47C5-A6C2"}}]}}}
-     * — this method returns an empty list: {@code entry[0]} is skipped and
-     * nothing follows it.
+     * — this method returns an empty list.
      *
      * @param requestBody the raw {@code POST /inbound} body, exactly as received
-     * @return every candidate event payload after the patient entry, in bundle
-     *         order; empty when the body does not match the bundle contract
+     * @return every candidate event payload once every {@code Patient} entry
+     *         is removed, in bundle order; empty when the body does not match
+     *         the bundle contract
      */
     public List<BundleEntry> extract(String requestBody) {
         // Step 1: confirm the envelope actually wraps a FHIR Bundle. Anything
@@ -140,16 +148,19 @@ public class BundleEntryExtractor {
             return List.of();
         }
 
-        // Step 3: walk entry[1..n], deliberately starting one past the patient
-        // entry at PATIENT_ENTRY_INDEX (0). Each entry either becomes a
-        // BundleEntry or is dropped — see toBundleEntry() for why an entry
-        // might be dropped.
+        // Step 3: walk every entry, checking each one's own resourceType —
+        // never its position. Any entry CONFIRMED to be a Patient resource is
+        // skipped, no matter where in the bundle it appears; every other
+        // entry either becomes a BundleEntry or is dropped for some other
+        // reason — see toBundleEntry() for why an entry might be dropped.
         List<BundleEntry> candidateEventPayloads = new ArrayList<>();
-        for (int bundleEntryIndex = PATIENT_ENTRY_INDEX + 1;
-                bundleEntryIndex < bundleEntriesNode.size();
-                bundleEntryIndex++) {
-            toBundleEntry(bundleEntryIndex, bundleEntriesNode.get(bundleEntryIndex))
-                    .ifPresent(candidateEventPayloads::add);
+        for (int bundleEntryIndex = 0; bundleEntryIndex < bundleEntriesNode.size(); bundleEntryIndex++) {
+            JsonNode bundleEntryNode = bundleEntriesNode.get(bundleEntryIndex);
+            if (isPatientEntry(bundleEntryNode)) {
+                log.debug("Bundle entry[{}] is a Patient resource — skipping", bundleEntryIndex);
+                continue;
+            }
+            toBundleEntry(bundleEntryIndex, bundleEntryNode).ifPresent(candidateEventPayloads::add);
         }
 
         log.debug("Extracted {} candidate event payload(s) from {} bundle entries",
@@ -276,6 +287,26 @@ public class BundleEntryExtractor {
         }
 
         return Optional.of(new BundleEntry(bundleEntryIndex, eventResourceJson, eventResourceType));
+    }
+
+    /**
+     * @param bundleEntryNode one element of {@code resource.entry[]}, from
+     *                        any position in the bundle, or {@code null} if
+     *                        the array held a JSON {@code null} at that
+     *                        position
+     * @return {@code true} only when the entry carries a {@code resource}
+     *         object whose {@code resourceType} is exactly {@code
+     *         "Patient"} — position is never consulted
+     */
+    private boolean isPatientEntry(JsonNode bundleEntryNode) {
+        JsonNode entryResourceNode = bundleEntryNode == null ? null : bundleEntryNode.get(ENTRY_RESOURCE_FIELD);
+        if (entryResourceNode == null || !entryResourceNode.isObject()) {
+            return false;
+        }
+
+        JsonNode entryResourceTypeNode = entryResourceNode.get(BUNDLE_RESOURCE_TYPE_FIELD);
+        String entryResourceType = entryResourceTypeNode == null ? null : entryResourceTypeNode.asText(null);
+        return PATIENT_RESOURCE_TYPE_VALUE.equals(entryResourceType);
     }
 
     /**

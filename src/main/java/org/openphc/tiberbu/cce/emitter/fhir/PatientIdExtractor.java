@@ -14,16 +14,17 @@ import java.lang.reflect.Method;
  * Extracts the patient identifier that becomes the CloudEvents {@code subject},
  * from a single bundle entry's FHIR resource.
  *
- * <p>{@code entry[0]} (the Patient) is always skipped by {@link BundleEntryExtractor}
- * before extraction runs, so a {@code Patient} resource never legitimately reaches
- * {@link #extract(IBaseResource)}. This class does not need its own Patient-specific
+ * <p>Every bundle entry whose {@code resourceType} is {@code Patient} is
+ * skipped by {@link BundleEntryExtractor} before extraction runs, so a
+ * {@code Patient} resource never legitimately reaches {@link
+ * #extract(IBaseResource)}. This class does not need its own Patient-specific
  * resolution branch — every resource this method actually sees references a patient
  * indirectly, either as {@code subject} (e.g. {@code Encounter}, {@code Observation})
  * or as {@code patient} (e.g. {@code Consent}, {@code Immunization}).
  *
  * <p>Both accessors are found by reflection rather than a hardcoded per-type
  * mapping, matching the adaptor's no-allowlist contract (§3.3): whatever FHIR
- * resource type sits at {@code entry[1..n]} is handled the same way, with no
+ * resource type sits at any non-Patient entry is handled the same way, with no
  * per-type code change needed for a resource type not seen before.
  *
  * <p>Example: given a {@code Consent} entry
@@ -74,12 +75,13 @@ public class PatientIdExtractor {
         String resourceType = resource.fhirType();
 
         if (resource instanceof Patient) {
-            // Structurally unreachable under the bundle contract — entry[0] is always
-            // skipped before any resource reaches here. Reject rather than guess an
-            // identity, so a future contract change surfaces loudly instead of
-            // silently misattributing an event to the wrong subject.
+            // Structurally unreachable under the bundle contract — a confirmed Patient
+            // entry is always skipped by BundleEntryExtractor before any resource
+            // reaches here. Reject rather than guess an identity, so a future contract
+            // change surfaces loudly instead of silently misattributing an event to
+            // the wrong subject.
             throw new PatientIdNotFoundException(
-                    "Patient resource reached patient identifier extraction — entry[0] "
+                    "Patient resource reached patient identifier extraction — it "
                             + "should have been skipped by BundleEntryExtractor");
         }
 

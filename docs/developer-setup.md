@@ -157,7 +157,7 @@ rootProject.name = "tiberbu-cce-emitter-adaptor"
 
 ## 5. Application Payload Contract
 
-The TibERbu adaptor contract is bundle-based: every inbound request is expected to contain a FHIR `Bundle`, the first entry is the patient resource that should be ignored, and entries from the second position onward are forwarded as individual event payloads.
+The TibERbu adaptor contract is bundle-based: every inbound request is expected to contain a FHIR `Bundle`; any entry whose `resourceType` is `Patient` is ignored, and every other entry is forwarded as an individual event payload.
 
 For local testing, create bundle fixtures in the following shape:
 
@@ -516,7 +516,7 @@ Expected: `202 Accepted` with an `application/json` body of `{"status":"processe
 |---------|-----|
 | `./gradlew: Permission denied` | `chmod +x gradlew` |
 | `FhirContext.forR4()` slow first call | Normal — HAPI initializes models on first use (~2s). Subsequent calls are instant. |
-| Events silently ignored (200 `"ignored"`) | The bundle produced no events: `resource` is not a FHIR `Bundle`, `resource.entry[]` is empty, or the bundle holds only the patient entry at `entry[0]`. There is no source-level filter, so this is never a source mismatch. |
+| Events silently ignored (200 `"ignored"`) | The bundle produced no events: `resource` is not a FHIR `Bundle`, `resource.entry[]` is empty, or every entry is a confirmed `Patient`. There is no source-level filter, so this is never a source mismatch. |
 | Collector 404 | Verify `cce.collector.url` and `cce.collector.events-path` |
 | Collector 401/403 | Outbound auth mismatch — check which mode `cce.collector.auth.*` selects (Architecture Overview §11.1) against what the target expects. |
 | Java 21 not found | Install Temurin 21: `sdk install java 21.0.5-tem` (SDKMAN) |
@@ -548,7 +548,7 @@ Integration tests use `@ActiveProfiles("integration")` with `application-integra
 
 | Test Class | Description |
 |------------|-------------|
-| `FullPipelineIntegrationTest` | End-to-end: bundle → CloudEvent(s) → Collector WireMock (happy path, `entry[0]` skipped, multi-entry fan-out, ignored and skipped outcomes, duplicate handling, correlation ID) |
+| `FullPipelineIntegrationTest` | End-to-end: bundle → CloudEvent(s) → Collector WireMock (happy path, `entry[0]` skipped when Patient, multi-entry fan-out, ignored and skipped outcomes, duplicate handling, correlation ID) |
 | `RetryIntegrationTest` | Retry behavior: 503→exhaustion→502, 422→no retry, retry→eventual success, 400→no retry |
 | `ActuatorMetricsIntegrationTest` | Health probes, Prometheus scrape, custom metric registration (uses `TestRestTemplate`, not MockMvc) |
 

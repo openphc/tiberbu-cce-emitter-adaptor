@@ -226,13 +226,76 @@ class BundleEntryExtractorTest {
         }
 
         @Test
-        @DisplayName("entry[0] is skipped unconditionally, even when it is not a Patient")
-        void entryZeroIsSkippedRegardlessOfItsResourceType() {
+        @DisplayName("entry[0] is skipped only when it is CONFIRMED to be a Patient — a non-Patient entry[0] is extracted too, as bundleEntryIndex=0")
+        void entryZeroIsExtractedWhenItIsNotAPatient() {
             List<BundleEntry> extractedEntries =
                     bundleEntryExtractor.extract(envelopeWithEntries(CONSENT_ENTRY, OBSERVATION_ENTRY));
 
+            assertThat(extractedEntries).hasSize(2);
+            assertThat(extractedEntries.get(0).bundleEntryIndex()).isEqualTo(0);
+            assertThat(extractedEntries.get(0).resourceType()).isEqualTo("Consent");
+            assertThat(extractedEntries.get(1).bundleEntryIndex()).isEqualTo(1);
+            assertThat(extractedEntries.get(1).resourceType()).isEqualTo("Observation");
+        }
+
+        @Test
+        @DisplayName("a genuine Patient entry[0] is skipped, and later non-Patient entries are extracted")
+        void confirmedPatientEntryZeroIsStillSkipped() {
+            List<BundleEntry> extractedEntries =
+                    bundleEntryExtractor.extract(envelopeWithEntries(PATIENT_ENTRY, CONSENT_ENTRY, OBSERVATION_ENTRY));
+
+            assertThat(extractedEntries).hasSize(2);
+            assertThat(extractedEntries.get(0).resourceType()).isEqualTo("Consent");
+            assertThat(extractedEntries.get(1).resourceType()).isEqualTo("Observation");
+        }
+
+        @Test
+        @DisplayName("a Patient entry in the middle of the bundle (not at index 0) is skipped too")
+        void patientEntryInTheMiddleIsSkipped() {
+            List<BundleEntry> extractedEntries =
+                    bundleEntryExtractor.extract(envelopeWithEntries(CONSENT_ENTRY, PATIENT_ENTRY, OBSERVATION_ENTRY));
+
+            assertThat(extractedEntries).hasSize(2);
+            assertThat(extractedEntries.get(0).bundleEntryIndex()).isEqualTo(0);
+            assertThat(extractedEntries.get(0).resourceType()).isEqualTo("Consent");
+            assertThat(extractedEntries.get(1).bundleEntryIndex()).isEqualTo(2);
+            assertThat(extractedEntries.get(1).resourceType()).isEqualTo("Observation");
+        }
+
+        @Test
+        @DisplayName("a Patient entry at the very last position is skipped too")
+        void patientEntryAtTheLastPositionIsSkipped() {
+            List<BundleEntry> extractedEntries =
+                    bundleEntryExtractor.extract(envelopeWithEntries(CONSENT_ENTRY, OBSERVATION_ENTRY, PATIENT_ENTRY));
+
+            assertThat(extractedEntries).hasSize(2);
+            assertThat(extractedEntries.get(0).bundleEntryIndex()).isEqualTo(0);
+            assertThat(extractedEntries.get(0).resourceType()).isEqualTo("Consent");
+            assertThat(extractedEntries.get(1).bundleEntryIndex()).isEqualTo(1);
+            assertThat(extractedEntries.get(1).resourceType()).isEqualTo("Observation");
+        }
+
+        @Test
+        @DisplayName("multiple Patient entries at different positions are all skipped, not just the first")
+        void multiplePatientEntriesAtDifferentPositionsAreAllSkipped() {
+            List<BundleEntry> extractedEntries = bundleEntryExtractor.extract(
+                    envelopeWithEntries(PATIENT_ENTRY, CONSENT_ENTRY, PATIENT_ENTRY, OBSERVATION_ENTRY));
+
+            assertThat(extractedEntries).hasSize(2);
+            assertThat(extractedEntries.get(0).bundleEntryIndex()).isEqualTo(1);
+            assertThat(extractedEntries.get(0).resourceType()).isEqualTo("Consent");
+            assertThat(extractedEntries.get(1).bundleEntryIndex()).isEqualTo(3);
+            assertThat(extractedEntries.get(1).resourceType()).isEqualTo("Observation");
+        }
+
+        @Test
+        @DisplayName("a bundle with a single non-Patient entry at index 0 still yields that one event, not an empty list")
+        void singleNonPatientEntryAtIndexZeroIsExtracted() {
+            List<BundleEntry> extractedEntries = bundleEntryExtractor.extract(envelopeWithEntries(CONSENT_ENTRY));
+
             assertThat(extractedEntries).hasSize(1);
-            assertThat(extractedEntries.get(0).resourceType()).isEqualTo("Observation");
+            assertThat(extractedEntries.get(0).bundleEntryIndex()).isEqualTo(0);
+            assertThat(extractedEntries.get(0).resourceType()).isEqualTo("Consent");
         }
 
         @Test

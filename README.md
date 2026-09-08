@@ -20,4 +20,4 @@ This repository documents the TibERbu CCE emitter adaptor used to receive clinic
 
 ## Source payload note
 
-The source payload contract for this adaptor is a Bundle-based event message. The body is a wrapper object with `meta` (transport envelope) and `resource` (the FHIR Bundle itself); entries live at `resource.entry[]`. `entry[0]` is always the patient record and is ignored, and every entry from `entry[1]` onward is treated as an individual event payload that is forwarded downstream after filtering and normalization. A payload that yields no such entries is acknowledged with `200 OK` and `status: "ignored"` — there is no source-level filter.
+The source payload contract for this adaptor is a Bundle-based event message. The body is a wrapper object with `meta` (transport envelope) and `resource` (the FHIR Bundle itself); entries live at `resource.entry[]`. Any entry whose `resourceType` is `Patient` is skipped; every other entry is treated as an individual event payload that is forwarded downstream after filtering and normalization. A payload that yields no such entries is acknowledged with `200 OK` and `status: "ignored"` — there is no source-level filter.

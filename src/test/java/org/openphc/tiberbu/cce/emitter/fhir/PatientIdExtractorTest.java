@@ -146,7 +146,7 @@ class PatientIdExtractorTest {
 
             assertThatThrownBy(() -> patientIdExtractor.extract(patient))
                     .isInstanceOf(PatientIdNotFoundException.class)
-                    .hasMessageContaining("entry[0]");
+                    .hasMessageContaining("BundleEntryExtractor");
         }
     }
 

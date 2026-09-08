@@ -5,13 +5,13 @@
 The Emitter Adaptor is a standalone **Spring Boot 3.x** application that sits behind the gateway and serves a single source system — **TibERbu**. It is responsible for:
 
 1. **Receiving** Bundle-based clinical event payloads from TibERbu through the gateway to `POST /inbound`
-2. **Ignoring** the first bundle entry when it is the patient resource, as it is not an event payload
+2. **Ignoring** any bundle entry whose resource type is `Patient`, as it is not an event payload
 3. **Normalizing** each remaining bundle entry as an individual FHIR event for downstream handling
 4. **Filtering** the event by facility allowlist before dispatch to downstream systems
 5. **Constructing** CloudEvents v1.0 envelopes with CCE-required fields and extensions
 6. **Forwarding** the CloudEvents to the CCE Collector Service via `RestClient`
 
-> The current contract is explicit: the top-level payload is always a Bundle; the first entry is the patient resource and can be ignored; every event for forwarding starts from the second bundle entry onward.
+> The current contract is explicit: the top-level payload is always a Bundle; any entry whose `resourceType` is `Patient` is ignored; every other entry is a candidate event for forwarding.
 
 ## 2. System Context
 
@@ -33,8 +33,8 @@ The Emitter Adaptor is a standalone **Spring Boot 3.x** application that sits be
 │             Spring Boot 3.4.x + HAPI FHIR 7.4.0             │
 │                                                             │
 │ 1. Receive Bundle payload via POST /inbound                 │
-│ 2. Ignore entry[0] (the Patient resource)                   │
-│ 3. Parse entry[1..n] as individual event payloads           │
+│ 2. Ignore any confirmed Patient entry                       │
+│ 3. Parse remaining entries as individual events             │
 │ 4. Apply the facility filter                                │
 │ 5. Build a CloudEvents v1.0 envelope per event              │
 │ 6. Forward via RestClient to the CCE Collector              │
@@ -143,7 +143,7 @@ org.openphc.tiberbu.cce.emitter/
 │   └── EventIdGenerator.java                      #   Deterministic ID from source + sourceEventId
 │
 ├── fhir/                                          # FHIR utilities
-│   ├── BundleEntryExtractor.java                  #   Bundle-first extraction: skip entry[0], yield entry[1..n] as BundleEntry
+│   ├── BundleEntryExtractor.java                  #   Bundle-first extraction: skip any confirmed Patient entry, yield rest as BundleEntry
 │   ├── BundleEntry.java                           #   (index, resourceJson, resourceType) for one extracted entry
 │   ├── FhirResourceParser.java                    #   HAPI FHIR parse of one entry's resourceJson (fresh IParser per call)
 │   ├── FacilityIdExtractor.java                   #   Extract facility ID from any FHIR resource location field (Encounter, ServiceRequest, Procedure, Immunization, etc.)
@@ -222,7 +222,7 @@ Single `@Component` that reads `cce.emitter.source` config and transforms FHIR R
 |------|-----------|-------------|
 | 1 | `InboundEventController` | Receives HTTP POST, creates `InboundRequest`, delegates to `InboundEventService`, maps the returned `InboundOutcome` onto status + JSON body |
 | 2 | `InboundEventService.process()` | Orchestrates the full pipeline (steps 3–5), returns `InboundOutcome` |
-| 3 | `SourceAdaptorService.adapt()` | Parses `resource` as a FHIR Bundle, skips `entry[0]` (patient), iterates `entry[1..n]` as candidate events |
+| 3 | `SourceAdaptorService.adapt()` | Parses `resource` as a FHIR Bundle, skips any entry whose `resourceType` is `Patient`, and iterates the remaining entries as candidate events |
 | 4 | `SourceAdaptorService.adapt()` | Per entry: extracts patient identifier, resolves facility ID, applies the facility filter (throws `FacilityFilterRejectedException` on denial → 200 `skipped`), stamps `cce.emitter.source`, builds `List<CloudEventDto>` |
 | 5 | `CollectorForwardingService.forward()` | POSTs each CloudEvent to Collector via `RestClient`; `@Retryable` on 5xx |
 
