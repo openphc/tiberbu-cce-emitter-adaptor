@@ -16,7 +16,7 @@ The adaptor outputs CloudEvents v1.0-compliant JSON to the CCE Collector.
 | `time` | string (ISO-8601) | Recommended | Adaptor | Event creation timestamp in UTC |
 | `datacontenttype` | string | Recommended | Static | Always `"application/fhir+json"` |
 | `data` | object | Recommended | From FHIR resource | FHIR R4 resource JSON |
-| `facilityid` | string | Optional | FHIR resource | Facility ID, via `FacilityIdExtractor`. For `Encounter`, `hospitalization.origin` first, then `location[0].location` (the `source-facility` extension is never consulted for `Encounter` — see §3.5); for other types, `locationReference[0]` (e.g. `ServiceRequest`) or `location` direct reference (e.g. `Procedure`, `Immunization`). Any `ResourceType/` prefix stripped (`Location/1302` → `1302`, `Organization/1302` → `1302`). `null` for resources with no location info (e.g. `Patient`, `Observation`). |
+| `facilityid` | string | Optional | FHIR resource | Facility ID, via `FacilityIdExtractor`: the resource's `organization` reference (reflective `getOrganization()`), based on real tibERbu `Consent` payloads. A `ResourceType/` prefix is stripped (`Organization/1302` → `1302`). `null` when the resource has no `organization` reference (e.g. it has no such field at all, or the field is unpopulated). |
 | `sourceeventid` | string | Optional | *(not populated)* | Not populated |
 | `correlationid` | string | Recommended | Adaptor-generated | Adaptor-generated UUID |
 | `protocolinstanceid` | string | Optional | Usually null | Protocol instance — emitter normally does not set this |
@@ -75,7 +75,7 @@ For the full list of inbound headers, see [API Reference — §2.1 POST /inbound
 | Field | Type | Source | Description |
 |-------|------|--------|-------------|
 | `sourceIdentifier` | String | The configured `cce.emitter.source` | e.g., `"tiberbu"` |
-| `facilityId` | String | `FacilityIdExtractor`, from the FHIR resource | Nullable — null for resources with no location info |
+| `facilityId` | String | `FacilityIdExtractor` — the resource's `organization` reference (see §3.3) | Nullable — null when there is no `organization` reference to resolve |
 | `sourceEventId` | String | Not populated | Always null |
 | `correlationId` | String | Adaptor-generated | For downstream tracing. Never null. |
 | `eventTime` | OffsetDateTime | `Instant.now(ZoneOffset.UTC)` | When the adaptor received the event |
@@ -127,7 +127,11 @@ Prefix: `cce.emitter.facility-filter`
 
 **Matching is case-insensitive.** Both the configured IDs and the resolved facility ID are lowercased before comparison, so `abc-123` in the allowlist admits an inbound `ABC-123`. Numeric facility codes are unaffected.
 
-**Skip behaviour:** Events with a facility ID that is not in the allowlist return `200 OK` with `status: "skipped"` — they are not forwarded to the Collector. A skip is a normal outcome, not an error. Events with no facility ID are passed through unconditionally — only events that carry a resolved facility ID are subject to filtering. `FacilityIdExtractor` resolves the facility ID from, for `Encounter`, `hospitalization.origin` first and `location[0].location` as a fallback (per FHIR R4, `hospitalization` is only ever populated on a `TRANSFER_ENCOUNTER`; the `source-facility` extension is deliberately never consulted for `Encounter`); for other types, `locationReference[0]` (e.g. `ServiceRequest`) or a direct `location` reference (e.g. `Procedure`, `Immunization`), falling back to the `source-facility` extension for types with no FHIR location at all (e.g. `Observation`, `Condition`). Any `ResourceType/` prefix is stripped generically so both `Location/1302` and `Organization/1302` compare as `1302`. Resources with no location fields and no extension (e.g. `Patient`, `RelatedPerson`) resolve to `null` and always pass through.
+**Skip behaviour:** Events with a facility ID that is not in the allowlist return `200 OK` with `status: "skipped"` — they are not forwarded to the Collector. A skip is a normal outcome, not an error. Events with no facility ID are passed through unconditionally — only events that carry a resolved facility ID are subject to filtering.
+
+`FacilityIdExtractor` resolves the facility ID from the resource's `organization` reference, found reflectively (`getOrganization()`) with no hardcoded per-resource-type mapping — the same approach `PatientIdExtractor` uses for `subject`/`patient`. HAPI generates two shapes for this accessor depending on resource type: a single `Reference`, or a `List<Reference>` (e.g. `Consent`) — the first populated entry is used. Based on real tibERbu data.
+
+A `ResourceType/` prefix is stripped generically so `Organization/1302` resolves to `1302`; a bare ID with no prefix passes through unchanged. When a reference carries no reference string, `identifier.value` is used instead. Resources with no `organization` reference — either because the resource type doesn't declare the field at all (e.g. `Observation`, `Encounter`), or the field exists but is unpopulated — resolve to `null` and always pass through.
 
 ### 3.4 Server Properties
 

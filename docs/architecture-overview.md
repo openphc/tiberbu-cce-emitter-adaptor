@@ -146,7 +146,7 @@ org.openphc.tiberbu.cce.emitter/
 │   ├── BundleEntryExtractor.java                  #   Bundle-first extraction: skip any confirmed Patient entry, yield rest as BundleEntry
 │   ├── BundleEntry.java                           #   (index, resourceJson, resourceType) for one extracted entry
 │   ├── FhirResourceParser.java                    #   HAPI FHIR parse of one entry's resourceJson (fresh IParser per call)
-│   ├── FacilityIdExtractor.java                   #   Extract facility ID from any FHIR resource location field (Encounter, ServiceRequest, Procedure, Immunization, etc.)
+│   ├── FacilityIdExtractor.java                   #   Facility ID: the resource's organization reference, based on real tibERbu data
 │   └── PatientIdExtractor.java                    #   Extract patient identifier from FHIR resources
 │
 ├── filter/                                        # Facility filter

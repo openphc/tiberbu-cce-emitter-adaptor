@@ -268,7 +268,7 @@ When `FACILITY_FILTER_IDS` is configured (non-empty) and the event's resolved fa
 
 Events with no facility ID (e.g. `Patient`, `RelatedPerson`) are always forwarded and never reach the filter.
 
-> **Note:** Configure `ids` with bare ID values only (e.g. `0030`, `1302`). `FacilityIdExtractor` strips any `ResourceType/` prefix generically during extraction — both `Location/1302` and `Organization/1302` resolve to `1302` before reaching the filter.
+> **Note:** Configure `ids` with bare ID values only (e.g. `0030`, `1302`). `FacilityIdExtractor` strips a `ResourceType/` prefix during extraction — `Organization/1302` resolves to `1302` before reaching the filter.
 
 ### 4.2 Non-processable Payload (200 — Silently Ignored)
 
