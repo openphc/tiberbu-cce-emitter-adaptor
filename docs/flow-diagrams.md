@@ -65,10 +65,10 @@ sequenceDiagram
     EvtSvc->>Svc: adapt(inboundRequest)
     activate Svc
     Svc->>Svc: Parse Bundle, skip every entry confirmed to be a Patient, iterate the rest
-    Svc->>Svc: buildSourceMetadata (resolve facilityId: header → FHIR fallback)
+    Svc->>Svc: buildSourceMetadata (facilityId from the resource's organization reference)
     Svc->>Svc: FacilityFilter.enforceFilter(facilityId, sourceKey)
     Note over Svc: FacilityFilterRejectedException if denied →<br/>caught by InboundEventService → 200 OK (skipped)
-    Svc->>CE: build(eventResource, patientUpid, type, metadata)
+    Svc->>CE: build(eventResource, patientId, type, metadata)
     CE-->>Svc: CloudEventDto
     Svc-->>EvtSvc: List<CloudEventDto>
     deactivate Svc

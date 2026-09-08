@@ -76,11 +76,11 @@ For the full list of inbound headers, see [API Reference — §2.1 POST /inbound
 |-------|------|--------|-------------|
 | `sourceIdentifier` | String | The configured `cce.emitter.source` | e.g., `"tiberbu"` |
 | `facilityId` | String | `FacilityIdExtractor` — the resource's `organization` reference (see §3.3) | Nullable — null when there is no `organization` reference to resolve |
-| `sourceEventId` | String | Not populated | Always null |
 | `correlationId` | String | Adaptor-generated | For downstream tracing. Never null. |
 | `eventTime` | OffsetDateTime | `Instant.now(ZoneOffset.UTC)` | When the adaptor received the event |
 | `sourcePath` | String | Request URI path | e.g., `/inbound` |
-| `bundleEntryIndex` | Integer | Bundle iteration context | The index of the current bundle entry being processed. The patient entry at `0` is ignored and all subsequent entries are forwarded individually. |
+| `traceId` | String | The inbound envelope's `meta.traceId` | Nullable. The primary input to `EventIdGenerator`'s deterministic CloudEvents `id` — a null/blank value makes the id random instead of deterministic for that event. There is no `sourceEventId` field: tibERbu sends no per-event header. |
+| `bundleEntryIndex` | int | Bundle iteration context | This entry's position in `resource.entry[]`. Used by `EventIdGenerator` as the per-entry id differentiator only when the entry's own `resource.id` is absent. |
 
 ## 3. Configuration Properties
 

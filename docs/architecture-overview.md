@@ -61,7 +61,7 @@ The Emitter Adaptor is a standalone **Spring Boot 3.x** application that sits be
 | **Stateless** | No local database; no session state; all context derived from inbound request |
 | **Single Responsibility** | Serves one source system, named by `cce.emitter.source` — currently tibERbu |
 | **Single Source** | Serves tibERbu only; the emitted `source` attribute is fixed by `cce.emitter.source` |
-| **Idempotent Output** | Same source event always produces the same CloudEvents `id` — Collector handles dedup |
+| **Idempotent Output** | Same source event produces the same CloudEvents `id`, whenever the inbound envelope carries a `traceId` — Collector handles dedup from there. Absent a `traceId`, the `id` is random per delivery |
 | **Fail-Fast** | Invalid payloads rejected immediately with descriptive errors |
 | **Retry with Backoff** | Collector forwarding uses Spring Retry with exponential backoff on 5xx/timeout |
 
@@ -140,7 +140,7 @@ org.openphc.tiberbu.cce.emitter/
 │
 ├── cloudevents/                                   # CloudEvents envelope construction
 │   ├── CloudEventEnvelopeBuilder.java             #   Builds CloudEvents v1.0 JSON
-│   └── EventIdGenerator.java                      #   Deterministic ID from source + sourceEventId
+│   └── EventIdGenerator.java                      #   Deterministic UUID v5 from traceId + entry resource id
 │
 ├── fhir/                                          # FHIR utilities
 │   ├── BundleEntryExtractor.java                  #   Bundle-first extraction: skip any confirmed Patient entry, yield rest as BundleEntry
@@ -161,7 +161,7 @@ org.openphc.tiberbu.cce.emitter/
 ├── model/                                         # DTOs
 │   ├── CloudEventDto.java                         #   CloudEvents v1.0 output DTO
 │   ├── InboundRequest.java                        #   Wraps incoming HTTP body + lowercased headers
-│   ├── SourceMetadata.java                        #   sourceIdentifier, facilityId, sourceEventId
+│   ├── SourceMetadata.java                        #   sourceIdentifier, facilityId, correlationId, traceId, bundleEntryIndex
 │   ├── TransformationResult.java                  #   Per-event success/failure detail
 │   ├── InboundOutcome.java                        #   HTTP status + body returned to the controller
 │   ├── AcknowledgementResponse.java               #   Body for ignored / skipped outcomes

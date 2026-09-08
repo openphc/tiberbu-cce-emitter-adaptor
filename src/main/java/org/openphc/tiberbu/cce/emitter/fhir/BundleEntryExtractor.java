@@ -266,7 +266,7 @@ public class BundleEntryExtractor {
             return Optional.empty();
         }
 
-        // Step 2: every downstream step (patient UPID extraction, facility
+        // Step 2: every downstream step (patient identifier extraction, facility
         // extraction, CloudEvent type) needs to know the FHIR resource type,
         // so an entry that does not carry one cannot be processed and is
         // dropped here rather than deferred to a later, noisier failure.
