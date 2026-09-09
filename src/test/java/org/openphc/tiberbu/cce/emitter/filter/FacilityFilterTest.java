@@ -117,7 +117,7 @@ class FacilityFilterTest {
     }
 
     @Nested
-    @DisplayName("tiberbu.cce.emitter.events.filtered counter")
+    @DisplayName("tiberbu.cce.emitter.entries.filtered counter")
     class FilteredEventsCounter {
 
         @Test
@@ -130,7 +130,7 @@ class FacilityFilterTest {
             assertThatExceptionOfType(FacilityFilterRejectedException.class)
                     .isThrownBy(() -> facilityFilter.enforceFilter("9999", SOURCE));
 
-            double filteredCount = meterRegistry.counter("tiberbu.cce.emitter.events.filtered",
+            double filteredCount = meterRegistry.counter("tiberbu.cce.emitter.entries.filtered",
                     "source", SOURCE, "facility", "9999", "reason", "NOT_IN_ALLOWLIST").count();
             assertThat(filteredCount).isEqualTo(1.0);
         }
@@ -171,7 +171,7 @@ class FacilityFilterTest {
                         .isThrownBy(() -> facilityFilter.enforceFilter("9999", SOURCE));
             }
 
-            double filteredCount = meterRegistry.counter("tiberbu.cce.emitter.events.filtered",
+            double filteredCount = meterRegistry.counter("tiberbu.cce.emitter.entries.filtered",
                     "source", SOURCE, "facility", "9999", "reason", "NOT_IN_ALLOWLIST").count();
             assertThat(filteredCount).isEqualTo(3.0);
         }

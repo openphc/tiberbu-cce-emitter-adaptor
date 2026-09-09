@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
  *
  * <p>Example — allowlist {@code {"0030"}}, event facility {@code "9999"}:
  * {@code enforceFilter("9999", "tiberbu")} increments {@code
- * tiberbu.cce.emitter.events.filtered} (tags {@code source=tiberbu},
+ * tiberbu.cce.emitter.entries.filtered} (tags {@code source=tiberbu},
  * {@code facility=9999}, {@code reason=NOT_IN_ALLOWLIST}) and throws {@link
  * FacilityFilterRejectedException}. The same allowlist with facility {@code
  * "0030"}, or a {@code null} facility (no facility context on the resource,
@@ -33,7 +33,7 @@ public class FacilityFilter {
 
     private static final Logger log = LoggerFactory.getLogger(FacilityFilter.class);
 
-    private static final String FILTERED_EVENTS_COUNTER_NAME = "tiberbu.cce.emitter.events.filtered";
+    private static final String FILTERED_ENTRIES_COUNTER_NAME = "tiberbu.cce.emitter.entries.filtered";
     private static final String NOT_IN_ALLOWLIST_REASON = "NOT_IN_ALLOWLIST";
 
     private final FacilityFilterProperties facilityFilterProperties;
@@ -74,7 +74,7 @@ public class FacilityFilter {
             return;
         }
 
-        Counter.builder(FILTERED_EVENTS_COUNTER_NAME)
+        Counter.builder(FILTERED_ENTRIES_COUNTER_NAME)
                 .tag("source", sourceKey)
                 .tag("facility", facilityId)
                 .tag("reason", NOT_IN_ALLOWLIST_REASON)

@@ -287,8 +287,91 @@ class InboundEventServiceTest {
             service.process(sampleRequest());
             service.process(sampleRequest());
 
-            double receivedCount = meterRegistry.counter("tiberbu.cce.emitter.events.received").count();
+            double receivedCount = meterRegistry.counter(
+                    "tiberbu.cce.emitter.events.received", "source", "tiberbu", "path", "/inbound").count();
             assertThat(receivedCount).isEqualTo(2.0);
+        }
+
+        @Test
+        @DisplayName("entries.forwarded counts every entry that reaches the Collector, accepted or duplicate alike")
+        void eventsForwardedCountsEveryEntryThatReachesTheCollector() {
+            SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+            InboundEventService service = new InboundEventService(
+                    sourceAdaptorService, collectorForwardingService, meterRegistry, new EmitterProperties("tiberbu"));
+            CloudEventDto accepted = cloudEvent("Consent");
+            CloudEventDto duplicate = cloudEvent("Observation");
+            when(sourceAdaptorService.processBundleEntries(any())).thenReturn(List.of(
+                    BundleEntryResult.readyToForward(0, accepted),
+                    BundleEntryResult.readyToForward(1, duplicate)));
+            when(collectorForwardingService.forward(accepted)).thenReturn(acceptedResponse());
+            when(collectorForwardingService.forward(duplicate)).thenReturn(duplicateResponse());
+
+            service.process(sampleRequest());
+
+            assertThat(meterRegistry.counter("tiberbu.cce.emitter.entries.forwarded", "source", "tiberbu").count())
+                    .isEqualTo(2.0);
+        }
+
+        @Test
+        @DisplayName("entries.duplicate counts only the forwarded entries the Collector reports as duplicate")
+        void eventsDuplicateCountsOnlyDuplicateOutcomes() {
+            SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+            InboundEventService service = new InboundEventService(
+                    sourceAdaptorService, collectorForwardingService, meterRegistry, new EmitterProperties("tiberbu"));
+            CloudEventDto accepted = cloudEvent("Consent");
+            CloudEventDto duplicate = cloudEvent("Observation");
+            when(sourceAdaptorService.processBundleEntries(any())).thenReturn(List.of(
+                    BundleEntryResult.readyToForward(0, accepted),
+                    BundleEntryResult.readyToForward(1, duplicate)));
+            when(collectorForwardingService.forward(accepted)).thenReturn(acceptedResponse());
+            when(collectorForwardingService.forward(duplicate)).thenReturn(duplicateResponse());
+
+            service.process(sampleRequest());
+
+            assertThat(meterRegistry.counter("tiberbu.cce.emitter.entries.duplicate").count()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("entries.received counts every candidate bundle entry, regardless of its eventual outcome")
+        void entriesReceivedCountsEveryCandidateEntryRegardlessOfOutcome() {
+            SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+            InboundEventService service = new InboundEventService(
+                    sourceAdaptorService, collectorForwardingService, meterRegistry, new EmitterProperties("tiberbu"));
+            CloudEventDto forwardable = cloudEvent("Consent");
+            TransformationResult skippedResult = TransformationResult.skipped(1, "Consent", PATIENT_ID, "NOT_IN_ALLOWLIST");
+            TransformationResult failedResult = TransformationResult.failed(2, "Observation", null, "no patient reference");
+            when(sourceAdaptorService.processBundleEntries(any())).thenReturn(List.of(
+                    BundleEntryResult.readyToForward(0, forwardable),
+                    BundleEntryResult.skipped(skippedResult),
+                    BundleEntryResult.failed(failedResult, new PatientIdNotFoundException("no patient reference"))));
+            when(collectorForwardingService.forward(forwardable)).thenReturn(acceptedResponse());
+
+            service.process(sampleRequest());
+
+            assertThat(meterRegistry.counter("tiberbu.cce.emitter.entries.received", "source", "tiberbu").count())
+                    .isEqualTo(3.0);
+        }
+
+        @Test
+        @DisplayName("entries.failed counts only adaptation-stage failures, tagged with the exception's simple name")
+        void entriesFailedCountsOnlyAdaptationStageFailures() {
+            SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+            InboundEventService service = new InboundEventService(
+                    sourceAdaptorService, collectorForwardingService, meterRegistry, new EmitterProperties("tiberbu"));
+            CloudEventDto forwardable = cloudEvent("Consent");
+            TransformationResult skippedResult = TransformationResult.skipped(1, "Consent", PATIENT_ID, "NOT_IN_ALLOWLIST");
+            TransformationResult failedResult = TransformationResult.failed(2, "Observation", null, "no patient reference");
+            when(sourceAdaptorService.processBundleEntries(any())).thenReturn(List.of(
+                    BundleEntryResult.readyToForward(0, forwardable),
+                    BundleEntryResult.skipped(skippedResult), // must NOT be counted as a failure
+                    BundleEntryResult.failed(failedResult, new PatientIdNotFoundException("no patient reference"))));
+            when(collectorForwardingService.forward(forwardable)).thenReturn(acceptedResponse());
+
+            service.process(sampleRequest());
+
+            assertThat(meterRegistry.counter(
+                    "tiberbu.cce.emitter.entries.failed", "source", "tiberbu", "reason", "PatientIdNotFoundException").count())
+                    .isEqualTo(1.0);
         }
     }
 }

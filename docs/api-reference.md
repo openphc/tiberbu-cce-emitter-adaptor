@@ -486,26 +486,34 @@ Spring Boot Actuator endpoints exposed for operations.
 ### Prometheus Metrics (excerpt)
 
 ```
-# HELP tiberbu_cce_emitter_events_received_total Total inbound events received
+# HELP tiberbu_cce_emitter_events_received_total Inbound requests received
 # TYPE tiberbu_cce_emitter_events_received_total counter
 tiberbu_cce_emitter_events_received_total{source="tiberbu",path="/inbound"} 42.0
 
-# HELP tiberbu_cce_emitter_events_forwarded_total Events forwarded to Collector
-# TYPE tiberbu_cce_emitter_events_forwarded_total counter
-tiberbu_cce_emitter_events_forwarded_total{source="tiberbu"} 40.0
+# HELP tiberbu_cce_emitter_entries_received_total Candidate bundle entries extracted, before any outcome is decided
+# TYPE tiberbu_cce_emitter_entries_received_total counter
+tiberbu_cce_emitter_entries_received_total{source="tiberbu"} 45.0
 
-# HELP tiberbu_cce_emitter_events_duplicate_total Duplicate events
-# TYPE tiberbu_cce_emitter_events_duplicate_total counter
-tiberbu_cce_emitter_events_duplicate_total 2.0
+# HELP tiberbu_cce_emitter_entries_forwarded_total Events forwarded to Collector
+# TYPE tiberbu_cce_emitter_entries_forwarded_total counter
+tiberbu_cce_emitter_entries_forwarded_total{source="tiberbu"} 40.0
+
+# HELP tiberbu_cce_emitter_entries_duplicate_total Duplicate events
+# TYPE tiberbu_cce_emitter_entries_duplicate_total counter
+tiberbu_cce_emitter_entries_duplicate_total 2.0
+
+# HELP tiberbu_cce_emitter_entries_failed_total Entries that failed adaptation before ever reaching the Collector
+# TYPE tiberbu_cce_emitter_entries_failed_total counter
+tiberbu_cce_emitter_entries_failed_total{source="tiberbu",reason="PatientIdNotFoundException"} 2.0
 
 # HELP tiberbu_cce_emitter_collector_latency_seconds Collector forwarding latency
 # TYPE tiberbu_cce_emitter_collector_latency_seconds summary
 tiberbu_cce_emitter_collector_latency_seconds_count 42.0
 tiberbu_cce_emitter_collector_latency_seconds_sum 8.456
 
-# HELP tiberbu_cce_emitter_events_filtered_total Events denied by facility filter
-# TYPE tiberbu_cce_emitter_events_filtered_total counter
-tiberbu_cce_emitter_events_filtered_total{source="tiberbu",facility="9999",reason="NOT_IN_ALLOWLIST"} 3.0
+# HELP tiberbu_cce_emitter_entries_filtered_total Events denied by facility filter
+# TYPE tiberbu_cce_emitter_entries_filtered_total counter
+tiberbu_cce_emitter_entries_filtered_total{source="tiberbu",facility="9999",reason="NOT_IN_ALLOWLIST"} 3.0
 ```
 
 ---

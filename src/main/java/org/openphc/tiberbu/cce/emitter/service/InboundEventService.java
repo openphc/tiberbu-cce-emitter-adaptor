@@ -67,7 +67,10 @@ public class InboundEventService {
 
     private final SourceAdaptorService sourceAdaptorService;
     private final CollectorForwardingService collectorForwardingService;
-    private final Counter eventsReceivedCounter;
+    private final MeterRegistry meterRegistry;
+    private final Counter entriesForwardedCounter;
+    private final Counter entriesDuplicateCounter;
+    private final Counter entriesReceivedCounter;
     private final String sourceIdentifier;
 
     public InboundEventService(
@@ -77,10 +80,20 @@ public class InboundEventService {
             EmitterProperties emitterProperties) {
         this.sourceAdaptorService = sourceAdaptorService;
         this.collectorForwardingService = collectorForwardingService;
-        this.eventsReceivedCounter = Counter.builder("tiberbu.cce.emitter.events.received")
-                .description("Inbound requests received")
-                .register(meterRegistry);
+        this.meterRegistry = meterRegistry;
         this.sourceIdentifier = emitterProperties.source();
+        this.entriesForwardedCounter = Counter.builder("tiberbu.cce.emitter.entries.forwarded")
+                .description("CloudEvents that reached the Collector (accepted or duplicate)")
+                .tag("source", sourceIdentifier)
+                .register(meterRegistry);
+        this.entriesDuplicateCounter = Counter.builder("tiberbu.cce.emitter.entries.duplicate")
+                .description("Forwarded CloudEvents the Collector reported as already-ingested duplicates")
+                .register(meterRegistry);
+        this.entriesReceivedCounter = Counter.builder("tiberbu.cce.emitter.entries.received")
+                .description("Candidate bundle entries extracted from an inbound request, before any outcome is decided — "
+                        + "the true entry-level denominator for entries.forwarded/duplicate/rejected/filtered/failed ratios")
+                .tag("source", sourceIdentifier)
+                .register(meterRegistry);
     }
 
     /**
@@ -88,10 +101,23 @@ public class InboundEventService {
      * @return the outcome — HTTP status plus the body to serialize
      */
     public InboundOutcome process(InboundRequest inboundRequest) {
-        eventsReceivedCounter.increment();
+        // source/path are both fixed per adaptor instance, but registered per-call rather than cached
+        // as a field — same reason FacilityFilter does this — Micrometer looks up-or-creates by
+        // name+tags, so this is cheap and keeps the tagging logic next to where the values are known.
+        // NOTE: one bundle can hold several candidate entries, so entries.forwarded routinely exceeds
+        // events.received (request-level) — they are never meant to move 1:1. entries.received, set
+        // below, is the correct entry-level denominator for forwarded/duplicate/rejected/filtered/failed
+        // ratios; see forwardEach's own javadoc.
+        Counter.builder("tiberbu.cce.emitter.events.received")
+                .description("Inbound requests received")
+                .tag("source", sourceIdentifier)
+                .tag("path", inboundRequest.getRequestPath())
+                .register(meterRegistry)
+                .increment();
 
         // parses the Bundle, skips any Patient entry, and builds a CloudEvent per remaining candidate
         List<BundleEntryResult> bundleEntryResults = sourceAdaptorService.processBundleEntries(inboundRequest);
+        entriesReceivedCounter.increment(bundleEntryResults.size());
         if (bundleEntryResults.isEmpty()) {
             // e.g. the body wasn't a Bundle, entry[] was empty, or every entry was a Patient
             log.debug("Request on path '{}' produced no candidate entries — 200 ignored", inboundRequest.getRequestPath());
@@ -140,7 +166,14 @@ public class InboundEventService {
         for (BundleEntryResult bundleEntryResult : bundleEntryResults) {
             if (!bundleEntryResult.isReadyToForward()) {
                 // already skipped or failed inside SourceAdaptorService — nothing to forward, pass its result through as-is
-                transformationResults.add(bundleEntryResult.terminalResult());
+                TransformationResult terminalResult = bundleEntryResult.terminalResult();
+                transformationResults.add(terminalResult);
+                if (TransformationResult.OUTCOME_FAILED.equals(terminalResult.outcome())) {
+                    // adaptation-stage failure (FHIR parsing / patient-identifier) — the one failure kind with
+                    // no other counter: forwarding-stage failures already have entries.rejected (4xx) and
+                    // collector.retries (5xx exhausted); this is what's left uncounted before this metric existed
+                    recordAdaptationFailure(bundleEntryResult.failureCause());
+                }
                 if (firstFailureCause == null) {
                     firstFailureCause = bundleEntryResult.failureCause(); // null for a SKIPPED entry, non-null for a FAILED one
                 }
@@ -151,7 +184,13 @@ public class InboundEventService {
             populateMdc(cloudEvent); // correlationId/source/eventType/subject — scoped to this entry's forward attempt only
             try {
                 CollectorResponse collectorResponse = collectorForwardingService.forward(cloudEvent);
-                transformationResults.add(TransformationResult.forwarded(bundleEntryResult.bundleEntryIndex(), cloudEvent, collectorResponse));
+                TransformationResult forwardedResult =
+                        TransformationResult.forwarded(bundleEntryResult.bundleEntryIndex(), cloudEvent, collectorResponse);
+                transformationResults.add(forwardedResult);
+                entriesForwardedCounter.increment();
+                if (TransformationResult.COLLECTOR_STATUS_DUPLICATE.equals(forwardedResult.collectorStatus())) {
+                    entriesDuplicateCounter.increment();
+                }
             } catch (CollectorClientException | CollectorForwardingException forwardingFailure) {
                 log.warn("Entry[{}] ({}) failed to forward: {}",
                         bundleEntryResult.bundleEntryIndex(), cloudEvent.type(), forwardingFailure.getMessage());
@@ -167,6 +206,20 @@ public class InboundEventService {
         }
 
         return firstFailureCause;
+    }
+
+    /**
+     * @param adaptationFailure the exception {@code SourceAdaptorService} caught while parsing the FHIR
+     *                          resource or extracting the patient identifier — never {@code null} here,
+     *                          per {@link BundleEntryResult#failed}'s own contract
+     */
+    private void recordAdaptationFailure(RuntimeException adaptationFailure) {
+        Counter.builder("tiberbu.cce.emitter.entries.failed")
+                .description("Bundle entries that failed during adaptation, before ever reaching the Collector")
+                .tag("source", sourceIdentifier)
+                .tag("reason", adaptationFailure.getClass().getSimpleName())
+                .register(meterRegistry)
+                .increment();
     }
 
     private void populateMdc(CloudEventDto cloudEvent) {

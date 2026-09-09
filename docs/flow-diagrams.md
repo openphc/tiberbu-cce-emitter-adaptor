@@ -169,7 +169,7 @@ sequenceDiagram
     else 400 Client Error
         Col-->>Fwd: 400 + { error: ... }
         Fwd->>Log: Client error — no retry
-        Note over Fwd: Counter: tiberbu.cce.emitter.events.rejected
+        Note over Fwd: Counter: tiberbu.cce.emitter.entries.rejected
         Fwd->>Fwd: throw CollectorClientException
     else 5xx / Timeout
         Col-->>Fwd: 503 Service Unavailable

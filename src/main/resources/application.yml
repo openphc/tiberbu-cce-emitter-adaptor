@@ -59,4 +59,4 @@ logging:
     org.openphc.tiberbu.cce: DEBUG
     org.springframework.web: INFO
   pattern:
-    console: "%d{ISO8601} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%d{ISO8601} [%thread] %-5level %logger{36} - correlationId=%X{correlationId} source=%X{source} eventType=%X{eventType} subject=%X{subject} - %msg%n"

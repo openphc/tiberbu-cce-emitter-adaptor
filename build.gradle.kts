@@ -42,6 +42,7 @@ dependencies {
 
     // Observability
     implementation("io.micrometer:micrometer-registry-prometheus")
+    implementation("net.logstash.logback:logstash-logback-encoder:7.4")
 
     // Lombok
     compileOnly("org.projectlombok:lombok")

@@ -10,13 +10,21 @@ All custom metrics are exposed at `GET /actuator/prometheus` and use the `cce_em
 
 | Metric | Type | Tags | Description |
 |--------|------|------|-------------|
-| `tiberbu_cce_emitter_events_received_total` | Counter | `source`, `path` | Total inbound event entries processed by the adaptor. The first patient bundle entry is ignored; all subsequent bundle entries count as received events. |
-| `tiberbu_cce_emitter_events_forwarded_total` | Counter | `source` | Individual event entries successfully forwarded to Collector |
-| `tiberbu_cce_emitter_events_duplicate_total` | Counter | — | Duplicate individual events (Collector returned 200) |
-| `tiberbu_cce_emitter_events_rejected_total` | Counter | — | Individual events rejected by Collector (4xx) |
+| `tiberbu_cce_emitter_events_received_total` | Counter | `source`, `path` | Inbound HTTP requests to `/inbound`. Incremented exactly once per request, regardless of how many bundle entries it contains or how they're each resolved. |
+| `tiberbu_cce_emitter_entries_received_total` | Counter | `source` | Candidate bundle entries extracted from an inbound request, before any outcome is decided. The correct entry-level denominator — see §1.1. |
+| `tiberbu_cce_emitter_entries_forwarded_total` | Counter | `source` | Individual event entries successfully forwarded to Collector |
+| `tiberbu_cce_emitter_entries_duplicate_total` | Counter | — | Duplicate individual events (Collector returned 200) |
+| `tiberbu_cce_emitter_entries_rejected_total` | Counter | — | Individual events rejected by Collector (4xx) |
+| `tiberbu_cce_emitter_entries_failed_total` | Counter | `source`, `reason` | Entries that failed adaptation — FHIR parsing or missing patient identifier — before ever reaching the Collector. `reason` is the exception's simple class name (e.g. `PatientIdNotFoundException`, `FhirMappingException`). |
 | `tiberbu_cce_emitter_collector_latency_seconds` | Timer | — | Collector forwarding round-trip latency for each individual event payload |
 | `tiberbu_cce_emitter_collector_retries_total` | Counter | — | Retry attempts exhausted (all retries failed) |
-| `tiberbu_cce_emitter_events_filtered_total` | Counter | `source`, `facility`, `reason` | Events skipped by facility filter (not forwarded; response is 200 OK). `reason`: `NOT_IN_ALLOWLIST`. Events with no facility ID pass through and are not counted. |
+| `tiberbu_cce_emitter_entries_filtered_total` | Counter | `source`, `facility`, `reason` | Events skipped by facility filter (not forwarded; response is 200 OK). `reason`: `NOT_IN_ALLOWLIST`. Events with no facility ID pass through and are not counted. |
+
+### 1.1 Received vs. forwarded — requests vs. entries
+
+`events_received` counts inbound **requests** — one increment per `POST /inbound` call. Every other counter here — `entries_received`, `entries_forwarded`, `entries_duplicate`, `entries_rejected`, `entries_failed`, and `entries_filtered` — counts individual **bundle entries**; the `entries_` prefix marks that distinction. One request's bundle routinely holds several entries, so `entries_received` (and everything derived from it) is expected to run well above `events_received` in normal operation — they are never meant to move 1:1.
+
+`entries_received` is the correct denominator for entry-level ratios: `entries_forwarded / entries_received` is a real percentage, and so is every rate in §3.2 and §4.1 below. Use `events_received` only for request-level questions — "did the source system stop calling us at all" (§3.2's `TiberbuCceEmitterNoEventsReceived`) — never as a stand-in for `entries_received`.
 
 ### JVM & Spring Boot Metrics (auto-registered)
 
@@ -83,7 +91,7 @@ groups:
 ```yaml
       # High rejection rate — Collector returning 4xx
       - alert: TiberbuCceEmitterHighRejections
-        expr: rate(tiberbu_cce_emitter_events_rejected_total[5m]) / rate(tiberbu_cce_emitter_events_received_total[5m]) > 0.05
+        expr: rate(tiberbu_cce_emitter_entries_rejected_total[5m]) / rate(tiberbu_cce_emitter_entries_received_total[5m]) > 0.05
         for: 5m
         labels:
           severity: warning
@@ -95,7 +103,7 @@ groups:
 
       # High duplicate rate
       - alert: TiberbuCceEmitterHighDuplicates
-        expr: rate(tiberbu_cce_emitter_events_duplicate_total[5m]) / rate(tiberbu_cce_emitter_events_received_total[5m]) > 0.20
+        expr: rate(tiberbu_cce_emitter_entries_duplicate_total[5m]) / rate(tiberbu_cce_emitter_entries_received_total[5m]) > 0.20
         for: 10m
         labels:
           severity: warning
@@ -104,6 +112,18 @@ groups:
           summary: "CCE Emitter >20% duplicate event rate"
           description: "More than 20% of events are duplicates (Collector returned 200). May indicate a retry storm or repeated source submissions."
           runbook: "Check if source system is resending events. Check for network-level retries between the source system and the adaptor."
+
+      # High adaptation failure rate — FHIR parsing or missing patient identifier, before ever reaching the Collector
+      - alert: TiberbuCceEmitterHighAdaptationFailures
+        expr: rate(tiberbu_cce_emitter_entries_failed_total[5m]) / rate(tiberbu_cce_emitter_entries_received_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: tiberbu-cce-emitter-adaptor
+        annotations:
+          summary: "CCE Emitter >5% entry adaptation failure rate"
+          description: "More than 5% of bundle entries are failing FHIR parsing or patient-identifier extraction for >5 minutes, before ever reaching the Collector."
+          runbook: "Check the `reason` tag (exception simple name) to tell a malformed-payload issue (FhirMappingException) from a missing-patient-reference issue (PatientIdNotFoundException) apart, then check source-system logs for the matching entry."
 
       # High latency — Collector response time degraded
       - alert: TiberbuCceEmitterHighLatency
@@ -119,7 +139,7 @@ groups:
 
       # High facility filter denial rate (may indicate misconfigured allowlist)
       - alert: TiberbuCceEmitterHighFilterDenialRate
-        expr: rate(tiberbu_cce_emitter_events_filtered_total[5m]) / rate(tiberbu_cce_emitter_events_received_total[5m]) > 0.50
+        expr: rate(tiberbu_cce_emitter_entries_filtered_total[5m]) / rate(tiberbu_cce_emitter_entries_received_total[5m]) > 0.50
         for: 5m
         labels:
           severity: warning
@@ -165,18 +185,19 @@ groups:
 
 | Panel | Type | Query | Description |
 |-------|------|-------|-------------|
-| **Events Received Rate** | Stat | `rate(tiberbu_cce_emitter_events_received_total[5m])` | Current inbound event rate (events/sec) |
-| **Events Forwarded Rate** | Stat | `rate(tiberbu_cce_emitter_events_forwarded_total[5m])` | Current forwarding rate |
-| **Success Rate** | Gauge | `rate(tiberbu_cce_emitter_events_forwarded_total[5m]) / rate(tiberbu_cce_emitter_events_received_total[5m]) * 100` | % of events successfully forwarded |
+| **Requests Received Rate** | Stat | `rate(tiberbu_cce_emitter_events_received_total[5m])` | Current inbound request rate (requests/sec) |
+| **Entries Received Rate** | Stat | `rate(tiberbu_cce_emitter_entries_received_total[5m])` | Current candidate-entry rate (entries/sec) — typically well above requests received |
+| **Success Rate** | Gauge | `rate(tiberbu_cce_emitter_entries_forwarded_total[5m]) / rate(tiberbu_cce_emitter_entries_received_total[5m]) * 100` | % of entries successfully forwarded |
 | **Service Status** | Stat | `up{job="tiberbu-cce-emitter-adaptor"}` | 1 = UP, 0 = DOWN |
 
 #### Row 2: Event Throughput (Time Series)
 
 | Panel | Type | Queries |
 |-------|------|---------|
-| **Event Throughput** | Time series (stacked) | `rate(tiberbu_cce_emitter_events_forwarded_total[5m])` — Forwarded |
-| | | `rate(tiberbu_cce_emitter_events_duplicate_total[5m])` — Duplicates |
-| | | `rate(tiberbu_cce_emitter_events_rejected_total[5m])` — Rejected |
+| **Event Throughput** | Time series (stacked) | `rate(tiberbu_cce_emitter_entries_forwarded_total[5m])` — Forwarded |
+| | | `rate(tiberbu_cce_emitter_entries_duplicate_total[5m])` — Duplicates |
+| | | `rate(tiberbu_cce_emitter_entries_rejected_total[5m])` — Rejected |
+| | | `rate(tiberbu_cce_emitter_entries_failed_total[5m])` — Adaptation Failures |
 | | | `rate(tiberbu_cce_emitter_collector_retries_total[5m])` — Retries Exhausted |
 
 #### Row 3: Latency
@@ -271,6 +292,7 @@ Docker marks the container as `unhealthy` after 3 consecutive failures. Containe
 | Service down | — | >1 minute |
 | Retries exhausted rate | — | Any sustained rate > 0 for 2 minutes |
 | Rejection rate | >5% for 5 minutes | >20% for 5 minutes |
+| Adaptation failure rate | >5% for 5 minutes | — |
 | Duplicate rate | >20% for 10 minutes | >50% for 10 minutes |
 | Collector latency p95 | >2 seconds for 5 minutes | >5 seconds for 5 minutes |
 | No events received | >30 minutes (business hours) | >60 minutes (business hours) |

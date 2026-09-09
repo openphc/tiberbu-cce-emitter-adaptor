@@ -277,13 +277,15 @@ Registered in `InboundEventService` and `CollectorForwardingService` via constru
 
 | Metric Name | Type | Tags | Registered In | Description |
 |-------------|------|------|---------------|-------------|
-| `tiberbu.cce.emitter.events.received` | Counter | `source`, `path` | `InboundEventService` | Total inbound events received |
-| `tiberbu.cce.emitter.events.forwarded` | Counter | `source` | `InboundEventService` | Events successfully forwarded to Collector |
-| `tiberbu.cce.emitter.events.duplicate` | Counter | — | `InboundEventService` | Duplicate events (Collector returned 200) |
-| `tiberbu.cce.emitter.events.rejected` | Counter | — | `CollectorForwardingService` | Events rejected by Collector (4xx) |
+| `tiberbu.cce.emitter.events.received` | Counter | `source`, `path` | `InboundEventService` | Inbound requests received (one per `POST /inbound` call, regardless of bundle size) |
+| `tiberbu.cce.emitter.entries.received` | Counter | `source` | `InboundEventService` | Candidate bundle entries extracted, before any outcome is decided — the correct entry-level denominator |
+| `tiberbu.cce.emitter.entries.forwarded` | Counter | `source` | `InboundEventService` | Events successfully forwarded to Collector |
+| `tiberbu.cce.emitter.entries.duplicate` | Counter | — | `InboundEventService` | Duplicate events (Collector returned 200) |
+| `tiberbu.cce.emitter.entries.rejected` | Counter | — | `CollectorForwardingService` | Events rejected by Collector (4xx) |
+| `tiberbu.cce.emitter.entries.failed` | Counter | `source`, `reason` | `InboundEventService` | Entries that failed adaptation (FHIR parsing or missing patient identifier), before ever reaching the Collector. `reason` is the exception's simple class name. |
 | `tiberbu.cce.emitter.collector.latency` | Timer | — | `CollectorForwardingService` | Collector forwarding round-trip latency |
 | `tiberbu.cce.emitter.collector.retries` | Counter | — | `CollectorForwardingService` | Retry attempts exhausted |
-| `tiberbu.cce.emitter.events.filtered` | Counter | `source`, `facility`, `reason` | `FacilityFilter` | Events skipped by facility filter (not forwarded). `reason` value: `NOT_IN_ALLOWLIST`. |
+| `tiberbu.cce.emitter.entries.filtered` | Counter | `source`, `facility`, `reason` | `FacilityFilter` | Events skipped by facility filter (not forwarded). `reason` value: `NOT_IN_ALLOWLIST`. |
 
 ## 7. MDC Context Fields
 

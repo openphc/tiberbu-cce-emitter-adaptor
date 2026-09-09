@@ -47,7 +47,7 @@ public class CollectorForwardingService {
     private final String eventsPath;
     private final Timer collectorLatencyTimer;
     private final Counter collectorRetriesExhaustedCounter;
-    private final Counter eventsRejectedCounter;
+    private final Counter entriesRejectedCounter;
 
     public CollectorForwardingService(
             @Qualifier("collectorRestClient") RestClient collectorRestClient,
@@ -61,8 +61,8 @@ public class CollectorForwardingService {
         this.collectorRetriesExhaustedCounter = Counter.builder("tiberbu.cce.emitter.collector.retries")
                 .description("Retry attempts exhausted (all retries failed)")
                 .register(meterRegistry);
-        this.eventsRejectedCounter = Counter.builder("tiberbu.cce.emitter.events.rejected")
-                .description("Events rejected by Collector (4xx)")
+        this.entriesRejectedCounter = Counter.builder("tiberbu.cce.emitter.entries.rejected")
+                .description("Entries rejected by Collector (4xx)")
                 .register(meterRegistry);
     }
 
@@ -110,7 +110,7 @@ public class CollectorForwardingService {
             int statusCode = clientError.getStatusCode().value();
             String body = clientError.getResponseBodyAsString();
             log.warn("Collector rejected CloudEvent id={} — HTTP {} : {}", cloudEvent.id(), statusCode, body);
-            eventsRejectedCounter.increment();
+            entriesRejectedCounter.increment();
             throw new CollectorClientException("Collector returned " + statusCode + ": " + body, statusCode, clientError);
 
         } catch (HttpServerErrorException serverError) {
