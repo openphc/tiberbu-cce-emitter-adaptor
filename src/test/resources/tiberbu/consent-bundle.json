@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "resourceType": "Bundle",
+    "resourceId": "VCR-20260901-57098420",
+    "event": "upserted",
+    "source": "shr-mediator",
+    "timestamp": "2026-09-01 11:55:40.281292",
+    "traceId": "ef1cb56375",
+    "bundleId": "VCR-20260901-57098420",
+    "agentId": "DHABP00018",
+    "version": "v1"
+  },
+  "resource": {
+    "resourceType": "Bundle",
+    "type": "transaction",
+    "entry": [
+      {
+        "request": {
+          "method": "PUT",
+          "url": "Patient/KE-SHRP-170CDF0A-1363-4972-B36A"
+        },
+        "resource": {
+          "resourceType": "Patient",
+          "id": "KE-SHRP-170CDF0A-1363-4972-B36A",
+          "gender": "male"
+        }
+      },
+      {
+        "request": {
+          "method": "PUT",
+          "url": "Consent/VCR-20260901-57098420"
+        },
+        "resource": {
+          "resourceType": "Consent",
+          "id": "VCR-20260901-57098420",
+          "status": "active",
+          "patient": {
+            "reference": "Patient/KE-SHRP-170CDF0A-1363-4972-B36A"
+          },
+          "organization": [
+            { "reference": "Organization/FAC-0001" }
+          ]
+        }
+      }
+    ]
+  }
+}

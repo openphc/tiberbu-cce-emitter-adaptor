@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "resourceType": "",
+    "resourceId": "",
+    "event": "",
+    "source": "",
+    "timestamp": "",
+    "traceId": "",
+    "bundleId": "",
+    "agentId": "",
+    "version": ""
+  },
+  "resource": {
+    "resourceType": "Bundle",
+    "type": "transaction",
+    "entry": [
+      {
+        "request": {
+          "method": "PUT",
+          "url": "Patient/KE-SHRP-7E93454F-6D34-47C5-A6C2"
+        },
+        "resource": {
+          "resourceType": "Patient",
+          "id": "KE-SHRP-7E93454F-6D34-47C5-A6C2",
+          "gender": "male",
+          "birthDate": "1982-08-17",
+          "deceasedBoolean": false
+        }
+      }
+    ]
+  }
+}

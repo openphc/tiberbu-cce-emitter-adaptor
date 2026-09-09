@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "resourceType": "Bundle",
+    "source": "shr-mediator",
+    "traceId": "trace-multi-0001",
+    "bundleId": "BND-multi-0001"
+  },
+  "resource": {
+    "resourceType": "Bundle",
+    "type": "transaction",
+    "entry": [
+      {
+        "request": {
+          "method": "PUT",
+          "url": "Patient/KE-SHRP-MULTI-0001"
+        },
+        "resource": {
+          "resourceType": "Patient",
+          "id": "KE-SHRP-MULTI-0001",
+          "gender": "female"
+        }
+      },
+      {
+        "request": {
+          "method": "PUT",
+          "url": "Consent/VCR-MULTI-0001"
+        },
+        "resource": {
+          "resourceType": "Consent",
+          "id": "VCR-MULTI-0001",
+          "status": "active",
+          "patient": {
+            "reference": "Patient/KE-SHRP-MULTI-0001"
+          },
+          "organization": [
+            { "reference": "Organization/FAC-0001" }
+          ]
+        }
+      },
+      {
+        "request": {
+          "method": "PUT",
+          "url": "Observation/OBS-MULTI-0001"
+        },
+        "resource": {
+          "resourceType": "Observation",
+          "id": "OBS-MULTI-0001",
+          "status": "final",
+          "subject": {
+            "reference": "Patient/KE-SHRP-MULTI-0001"
+          }
+        }
+      }
+    ]
+  }
+}
