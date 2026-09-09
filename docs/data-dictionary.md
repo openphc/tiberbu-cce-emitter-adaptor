@@ -190,33 +190,38 @@ by `InboundEventController`.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | `HttpStatus` | `202 ACCEPTED` when events were forwarded, `200 OK` otherwise |
-| `body` | Object | `ProcessedEventsResponse` (202) or `AcknowledgementResponse` (200) |
+| `status` | `HttpStatus` | `202 ACCEPTED` when at least one entry reached the Collector, `200 OK` otherwise |
+| `body` | Object | `ProcessedEventsResponse` (202, or 200 when `status: "skipped"`) or `AcknowledgementResponse` (200, `status: "ignored"` only) |
 
-### 5.2 AcknowledgementResponse (200 Body)
+When every candidate entry in a bundle fails outright (none forwarded, none filtered), `InboundEventService.process()` does not return an `InboundOutcome` at all — it re-throws the first entry's original exception, which flows through the normal exception-handling path (API Reference §4) instead.
 
-Returned when the request was understood but produced no forwarded events.
+### 5.2 AcknowledgementResponse (200 Body — `status: "ignored"` only)
+
+Returned only when the bundle produced no candidate entries at all (not JSON, not a Bundle, empty `entry[]`, or every entry confirmed to be a Patient). A facility-filter denial is **not** represented by this type — see `ProcessedEventsResponse` below, which reports per-entry detail even when nothing forwarded.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | String | `"ignored"` — the payload produced no events (see API Reference §4.2); or `"skipped"` — the event was denied by the facility filter |
+| `status` | String | Always `"ignored"` |
 | `message` | String | Human-readable explanation |
 
-### 5.3 ProcessedEventsResponse (202 Body)
+### 5.3 ProcessedEventsResponse (202, or 200 `status: "skipped"`)
 
-A successful (202) response body is a `ProcessedEventsResponse` — a typed summary of all forwarded events.
+Returned whenever at least one candidate entry was attempted and the request as a whole is a success — `"processed"` when at least one entry reached the Collector, `"skipped"` when none did but at least one was cleanly facility-filtered. Every candidate entry appears in `events[]`, including ones that were skipped or failed — see [Multi-entry failure policy](#multi-entry-failure-policy) below.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | String | Always `"processed"` |
-| `eventsForwarded` | int | Number of events forwarded to the Collector |
-| `events` | Array | Per-event detail list |
-| `events[].eventId` | String | The CloudEvent ID |
-| `events[].type` | String | FHIR `resourceType` (CloudEvent `type`) |
-| `events[].subject` | String | Patient identifier |
-| `events[].collectorStatus` | String | Collector-reported status (`"accepted"` or `"duplicate"`) |
+| `status` | String | `"processed"` (`eventsForwarded >= 1`) or `"skipped"` (`eventsForwarded == 0`, all filtered) |
+| `eventsForwarded` | int | Number of entries that actually reached the Collector |
+| `events` | Array | Every candidate entry's outcome, in bundle order |
+| `events[].entryIndex` | int | The entry's position in `resource.entry[]` |
+| `events[].eventId` | String | The CloudEvent ID; omitted unless `outcome` is `"forwarded"` |
+| `events[].type` | String | FHIR `resourceType` (CloudEvent `type`) — always present |
+| `events[].subject` | String | Patient identifier; omitted when it was never resolved |
+| `events[].outcome` | String | `"forwarded"`, `"skipped"`, or `"failed"` |
+| `events[].collectorStatus` | String | Collector-reported status (`"accepted"` or `"duplicate"`); omitted unless `outcome` is `"forwarded"` |
+| `events[].reason` | String | Why the entry was skipped or failed; omitted when `outcome` is `"forwarded"` |
 
-**Example:**
+**Example — all forwarded:**
 
 ```json
 {
@@ -224,14 +229,47 @@ A successful (202) response body is a `ProcessedEventsResponse` — a typed summ
   "eventsForwarded": 1,
   "events": [
     {
+      "entryIndex": 1,
       "eventId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       "type": "Consent",
       "subject": "KE-SHRP-170CDF0A-1363-4972-B36A",
+      "outcome": "forwarded",
       "collectorStatus": "accepted"
     }
   ]
 }
 ```
+
+**Example — one forwarded, one failed (still `202`):**
+
+```json
+{
+  "status": "processed",
+  "eventsForwarded": 1,
+  "events": [
+    {
+      "entryIndex": 1,
+      "eventId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "type": "Consent",
+      "subject": "KE-SHRP-170CDF0A-1363-4972-B36A",
+      "outcome": "forwarded",
+      "collectorStatus": "accepted"
+    },
+    {
+      "entryIndex": 2,
+      "type": "Observation",
+      "outcome": "failed",
+      "reason": "No patient reference found in Observation resource"
+    }
+  ]
+}
+```
+
+### 5.4 Multi-entry failure policy
+
+Every candidate bundle entry is adapted and forwarded independently by `SourceAdaptorService`/`InboundEventService` — one entry's facility-filter denial or failure never prevents a sibling entry in the same bundle from being attempted. This is deliberate: forwarding to the Collector is an irreversible side effect, so if entry A already forwarded successfully by the time entry B fails, there is no way to "undo" A. The response therefore reports exactly what happened to each entry, and the request as a whole is treated as a success (`202`, or `200 skipped`) as long as **at least one** entry forwarded or was cleanly filtered — reporting the whole request as failed in that situation would misrepresent something that already happened.
+
+Only when **every** candidate entry ends in a genuine failure (none forwarded, none filtered) does `InboundEventService` instead re-throw — the first entry's original exception, letting it flow through the normal exception-handling path (API Reference §4) rather than inventing a separate all-failed response shape.
 
 ## 6. Metrics Reference
 

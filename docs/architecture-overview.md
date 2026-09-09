@@ -154,7 +154,7 @@ org.openphc.tiberbu.cce.emitter/
 │   └── FacilityFilterProperties.java              #   @ConfigurationProperties("cce.emitter.facility-filter")
 │
 ├── service/                                       # Business logic
-│   ├── InboundEventService.java                   #   Orchestrates pipeline: adapt → forward (+ metrics + MDC)
+│   ├── InboundEventService.java                   #   Orchestrates pipeline: process → forward (+ metrics + MDC)
 │   ├── CollectorForwardingService.java            #   @Retryable: POST to Collector via RestClient (+ latency timer)
 │   └── CollectorTokenService.java                 #   OAuth2 client_credentials token management (Keycloak)
 │
@@ -222,8 +222,8 @@ Single `@Component` that reads `cce.emitter.source` config and transforms FHIR R
 |------|-----------|-------------|
 | 1 | `InboundEventController` | Receives HTTP POST, creates `InboundRequest`, delegates to `InboundEventService`, maps the returned `InboundOutcome` onto status + JSON body |
 | 2 | `InboundEventService.process()` | Orchestrates the full pipeline (steps 3–5), returns `InboundOutcome` |
-| 3 | `SourceAdaptorService.adapt()` | Parses `resource` as a FHIR Bundle, skips any entry whose `resourceType` is `Patient`, and iterates the remaining entries as candidate events |
-| 4 | `SourceAdaptorService.adapt()` | Per entry: extracts patient identifier, resolves facility ID, applies the facility filter (throws `FacilityFilterRejectedException` on denial → 200 `skipped`), stamps `cce.emitter.source`, builds `List<CloudEventDto>` |
+| 3 | `SourceAdaptorService.processBundleEntries()` | Parses `resource` as a FHIR Bundle, skips any entry whose `resourceType` is `Patient`, and iterates the remaining entries as candidate events |
+| 4 | `SourceAdaptorService.processBundleEntries()` | Per entry, independently: extracts patient identifier, resolves facility ID, applies the facility filter (a denial is a terminal SKIPPED outcome for that entry only, not an aborting exception), stamps `cce.emitter.source`, builds a `CloudEventDto` — returns `List<BundleEntryResult>`, one per candidate entry |
 | 5 | `CollectorForwardingService.forward()` | POSTs each CloudEvent to Collector via `RestClient`; `@Retryable` on 5xx |
 
 ## 8. External Interfaces

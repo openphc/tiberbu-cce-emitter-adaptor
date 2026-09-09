@@ -53,11 +53,13 @@ POST /inbound
 
 ### Response Format
 
-**Status:** `202 Accepted` when at least one event was forwarded, `200 OK` when the payload produced no events.
+**Status:** `202 Accepted` when at least one entry reached the Collector, `200 OK` when none did — either because the payload produced no candidate entries at all (`status: "ignored"`), or because at least one entry was cleanly facility-filtered and none reached the Collector (`status: "skipped"`).
 
 **Content-Type:** `application/json`
 
-**Body (202 — events forwarded):**
+Every candidate bundle entry is processed independently — one entry's facility-filter denial or failure never prevents a sibling entry in the same bundle from being forwarded. Forwarding is an irreversible side effect, so as long as **at least one** entry reached the Collector or was cleanly filtered, the whole response is a success (`202` or `200 skipped`) — the body lists every entry's own outcome, including any that failed, rather than the top-level status hiding what actually happened. Only when **every** candidate entry fails outright does the request answer with an error status instead (see [§4](#4-error-responses)).
+
+**Body (202 — at least one entry forwarded):**
 
 ```json
 {
@@ -65,18 +67,47 @@ POST /inbound
   "eventsForwarded": 1,
   "events": [
     {
+      "entryIndex": 1,
       "eventId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       "type": "Consent",
       "subject": "KE-SHRP-170CDF0A-1363-4972-B36A",
+      "outcome": "forwarded",
       "collectorStatus": "accepted"
     }
   ]
 }
 ```
 
-`collectorStatus` is `accepted` normally, or `duplicate` when the Collector reports the event was already ingested.
+`collectorStatus` is `accepted` normally, or `duplicate` when the Collector reports the event was already ingested — either way `outcome` is `"forwarded"`. `entryIndex` is the entry's position in `resource.entry[]`, included so a caller can tell entries apart even when `type`/`subject` alone don't disambiguate (e.g. two failed entries of the same resource type).
 
-**Body (200 — nothing forwarded):**
+**Body (202 — one entry forwarded, one entry in the same bundle failed):**
+
+```json
+{
+  "status": "processed",
+  "eventsForwarded": 1,
+  "events": [
+    {
+      "entryIndex": 1,
+      "eventId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "type": "Consent",
+      "subject": "KE-SHRP-170CDF0A-1363-4972-B36A",
+      "outcome": "forwarded",
+      "collectorStatus": "accepted"
+    },
+    {
+      "entryIndex": 2,
+      "type": "Observation",
+      "outcome": "failed",
+      "reason": "No patient reference found in Observation resource"
+    }
+  ]
+}
+```
+
+The overall status is still `202` — entry 1's successful forward is real and irreversible, so the request as a whole is reported as a success even though entry 2 failed. `eventId`, `subject`, and `collectorStatus` are all omitted (not `null`) for a `failed` or `skipped` entry, since they were never resolved.
+
+**Body (200 — nothing forwarded, nothing failed):**
 
 ```json
 {
@@ -85,7 +116,7 @@ POST /inbound
 }
 ```
 
-There is no source-level matching step on this adaptor — the source is fixed by `cce.emitter.source`. `ignored` means only that the request produced zero event payloads; see [§4.2](#42-non-processable-payload-200--silently-ignored) for the exact scenarios.
+There is no source-level matching step on this adaptor — the source is fixed by `cce.emitter.source`. `ignored` means only that the request produced zero candidate entries; see [§4.2](#42-non-processable-payload-200--silently-ignored) for the exact scenarios. See [§4.1](#41-facility-filter-skipped-200) for `status: "skipped"`, the other `200` outcome.
 
 ---
 
@@ -191,9 +222,11 @@ How each attribute is derived:
   "eventsForwarded": 1,
   "events": [
     {
+      "entryIndex": 1,
       "eventId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       "type": "Consent",
       "subject": "KE-SHRP-170CDF0A-1363-4972-B36A",
+      "outcome": "forwarded",
       "collectorStatus": "accepted"
     }
   ]
@@ -255,18 +288,31 @@ Rule 3 has no resource-type allowlist: whatever FHIR resource sits at these entr
 
 Error responses are plain JSON, produced by `GlobalExceptionHandler`. Sections 4.1 and 4.2 are **not** errors — they are normal `200 OK` outcomes returned directly by `InboundEventService`, documented here so callers can tell them apart from failures. Neither should be retried.
 
+The sections below (4.3 onward) only apply to a bundle when **every** candidate entry fails — as long as at least one entry reaches the Collector or is cleanly filtered, the request is `202`/`200 skipped` instead (see [§2](#response-format)), with the failed entry's own reason still visible in that response's `events[]`. When every entry does fail, the first one's failure is what determines the error status/code below — the other entries' failures aren't individually surfaced in the error body.
+
 ### 4.1 Facility Filter Skipped (200)
 
-When `FACILITY_FILTER_IDS` is configured (non-empty) and the event's resolved facility ID is not in the allowlist, the adaptor returns `200 OK` with `status: "skipped"` — the event is **not** forwarded to the Collector. A skip is a normal outcome, not an error, so callers should not retry. Events with no resolvable facility ID (e.g. `Patient`, `Observation`) always pass through unconditionally.
+When `FACILITY_FILTER_IDS` is configured (non-empty) and an entry's resolved facility ID is not in the allowlist, that entry is denied by the facility filter and never forwarded to the Collector. A denial is a normal outcome, not an error, so callers should not retry. Entries with no resolvable facility ID (e.g. `Patient`, `Observation`) always pass through unconditionally, since there's nothing for the filter to check.
+
+The whole request answers `status: "skipped"` only when **no** entry in the bundle reached the Collector, but **at least one** was cleanly filtered:
 
 ```json
 {
   "status": "skipped",
-  "message": "Event skipped by facility filter: facilityId='9999' source='tiberbu'"
+  "eventsForwarded": 0,
+  "events": [
+    {
+      "entryIndex": 1,
+      "type": "Consent",
+      "subject": "KE-SHRP-170CDF0A-1363-4972-B36A",
+      "outcome": "skipped",
+      "reason": "Event skipped by facility filter: facilityId='9999' source='tiberbu'"
+    }
+  ]
 }
 ```
 
-Events with no facility ID (e.g. `Patient`, `RelatedPerson`) are always forwarded and never reach the filter.
+If a bundle has multiple entries and at least one of them *does* reach the Collector, the request is `202` instead — a filtered sibling entry still shows up in `events` with `outcome: "skipped"`, it just doesn't change the overall status. See [§2 Response Format](#response-format) for that mixed case.
 
 > **Note:** Configure `ids` with bare ID values only (e.g. `0030`, `1302`). `FacilityIdExtractor` strips a `ResourceType/` prefix during extraction — `Organization/1302` resolves to `1302` before reaching the filter.
 

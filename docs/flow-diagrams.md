@@ -60,47 +60,65 @@ sequenceDiagram
     activate EvtSvc
 
     Note over EvtSvc: Counter: tiberbu.cce.emitter.events.received
-    Note over EvtSvc: any bundle entry whose resourceType is Patient is ignored
 
-    EvtSvc->>Svc: adapt(inboundRequest)
+    EvtSvc->>Svc: processBundleEntries(inboundRequest)
     activate Svc
     Svc->>Svc: Parse Bundle, skip every entry confirmed to be a Patient, iterate the rest
-    Svc->>Svc: buildSourceMetadata (facilityId from the resource's organization reference)
-    Svc->>Svc: FacilityFilter.enforceFilter(facilityId, sourceKey)
-    Note over Svc: FacilityFilterRejectedException if denied →<br/>caught by InboundEventService → 200 OK (skipped)
-    Svc->>CE: build(eventResource, patientId, type, metadata)
-    CE-->>Svc: CloudEventDto
-    Svc-->>EvtSvc: List<CloudEventDto>
+
+    loop Each candidate entry, independently
+        Svc->>Svc: parse resource, extract patient id, extract facility id
+        Svc->>Svc: FacilityFilter.enforceFilter(facilityId, sourceKey)
+        alt Denied by the filter
+            Note over Svc: terminal BundleEntryResult — SKIPPED,<br/>this entry never reaches CloudEventEnvelopeBuilder
+        else Passed (or no facility id to filter on)
+            Svc->>CE: build(eventResource, patientId, type, metadata)
+            CE-->>Svc: CloudEventDto
+            Note over Svc: BundleEntryResult — ready to forward
+        end
+        Note over Svc: a parse/patient-id failure here also becomes<br/>a terminal BundleEntryResult — FAILED, and does NOT<br/>stop the loop from reaching the remaining entries
+    end
+
+    Svc-->>EvtSvc: List<BundleEntryResult> (forwarded-pending, skipped, and failed entries, in bundle order)
     deactivate Svc
 
-    loop Each CloudEvent
+    loop Each BundleEntryResult ready to forward
         Note over EvtSvc: MDC: correlationId, source, eventType, subject
         EvtSvc->>Fwd: forward(cloudEvent)
         activate Fwd
         Note over Fwd: Timer: tiberbu.cce.emitter.collector.latency
         Note over Fwd: CollectorTokenService: get Bearer token<br/>(OAuth2 Keycloak or static fallback)
         Fwd->>Col: POST /v1/events
-        Col-->>Fwd: 202 Accepted
+        Col-->>Fwd: 202 Accepted (or 200 duplicate)
         Fwd-->>EvtSvc: CollectorResponse
         deactivate Fwd
-        Note over EvtSvc: Counter: tiberbu.cce.emitter.events.forwarded
+        Note over EvtSvc: a forwarding failure here becomes a FAILED<br/>TransformationResult too — still doesn't stop the loop
         Note over EvtSvc: MDC.clear()
     end
 
-    EvtSvc->>EvtSvc: ProcessedEventsResponse.from(results)
-
-    EvtSvc-->>Ctrl: InboundOutcome(202, body)
+    alt At least one entry forwarded
+        EvtSvc->>EvtSvc: ProcessedEventsResponse.from(results) — status "processed"
+        EvtSvc-->>Ctrl: InboundOutcome(202, body)
+    else No entry forwarded, but at least one was skipped
+        EvtSvc->>EvtSvc: ProcessedEventsResponse.from(results) — status "skipped"
+        EvtSvc-->>Ctrl: InboundOutcome(200, body)
+    else Every entry failed
+        Note over EvtSvc: re-throw the first entry's own exception —<br/>flows to GlobalExceptionHandler (§4) instead
+    end
     deactivate EvtSvc
 
-    Ctrl-->>Src: 202 (application/json)
+    Ctrl-->>Src: 202 or 200 (application/json)
     deactivate Ctrl
 ```
 
 ## 3. Bundle Processing & the Ignore / Skip Decision
 
 There is no source-level filter — the source is fixed by `cce.emitter.source`. The only
-two non-forwarding outcomes are `ignored` (the payload produced no events) and
-`skipped` (the facility filter denied the event); both return `200 OK`.
+two non-forwarding whole-request outcomes are `ignored` (the payload produced no candidate
+entries at all) and `skipped` (at least one entry was facility-filtered and none reached
+the Collector); both return `200 OK`. This diagram shows the per-entry decision that feeds
+into that aggregate — see [§2](#2-request-processing-sequence) for how the per-entry results
+combine into the final response, including the mixed-outcome case (some forwarded, some
+skipped or failed, still `202`).
 
 ```mermaid
 flowchart TD
@@ -114,15 +132,22 @@ flowchart TD
     C1 --> C2{"Any candidate entries remain,<br/>once every entry has been checked?"}
     C1b --> C2
     C2 -->|No| J
-    C2 -->|Yes| D["Process candidate entries as individual events"]
-    D --> E{"Facility filter pass?<br/>(no facility ID = pass)"}
+    C2 -->|Yes| D["Process each candidate entry independently<br/>(one entry's outcome never affects another)"]
+    D --> E{"Per entry — facility filter pass?<br/>(no facility ID = pass)"}
 
-    E -->|No| S["→ 200 OK (status: skipped)"]
-    E -->|Yes| F[Forward each event to Collector<br/>→ 202 per processed event]
+    E -->|No| S["This entry: SKIPPED"]
+    E -->|Yes| F["This entry: forward to Collector<br/>→ FORWARDED or FAILED"]
+
+    S --> G{"Aggregate — did ANY entry<br/>forward or get skipped?"}
+    F --> G
+    G -->|Yes| R["→ 202 processed, or 200 skipped<br/>(events[] lists every entry's real outcome)"]
+    G -->|"No (every entry FAILED)"| X["re-throw the first entry's exception<br/>→ flows to §4 Error Responses"]
 
     style F fill:#e8f5e9
+    style R fill:#e8f5e9
     style S fill:#fff3e0
     style J fill:#fff3e0
+    style X fill:#ffebee
 ```
 
 ## 4. Collector Forwarding with Retry
@@ -181,6 +206,12 @@ sequenceDiagram
 
 ## 5. Error Handling Flow
 
+Every candidate entry reaches one of four per-entry outcomes independently — one
+entry's parse/patient-id/filter/Collector failure never stops a sibling entry from
+being attempted (see [§2](#2-request-processing-sequence)). Only once every candidate
+entry in the bundle has reached a terminal per-entry outcome does the aggregation step
+below decide the single response for the whole request.
+
 ```mermaid
 flowchart TD
     A[Inbound Request] --> B{Parse OK?}
@@ -188,45 +219,52 @@ flowchart TD
     B -->|No| C[GlobalExceptionHandler<br/>400/500]
     B -->|Yes| D{"Any candidate entries remain<br/>after skipping every confirmed Patient entry?"}
 
-    D -->|No| E["Log debug + silently ignore<br/>→ 200 OK (ignored)"]
-    D -->|Yes| F{FHIR resource valid?}
+    D -->|No| E["→ 200 OK (ignored)"]
+    D -->|Yes| PerEntry["For EACH candidate entry, independently:"]
 
-    F -->|No| G[FhirMappingException<br/>→ 422 FHIR_MAPPING_ERROR]
+    PerEntry --> F{FHIR resource valid?}
+    F -->|No| G["FhirMappingException<br/>this entry: FAILED"]
     F -->|Yes| H{Patient ID found?}
 
-    H -->|No| I[PatientIdNotFoundException<br/>→ 400 PATIENT_ID_NOT_FOUND]
+    H -->|No| I["PatientIdNotFoundException<br/>this entry: FAILED"]
     H -->|Yes| FF{Facility filter pass?}
 
-    FF -->|No| FE["FacilityFilterRejectedException caught<br/>→ 200 OK (skipped)"]
+    FF -->|No| FE["this entry: SKIPPED"]
     FF -->|Yes| J{Collector accepts?}
 
-    J -->|202 OK| K[Success → 202 processed]
-    J -->|200 Dup| L[Duplicate → still 202]
-    J -->|400 Client| M[CollectorClientException<br/>→ include in batch result]
-    J -->|5xx × 3| N[CollectorForwardingException<br/>→ 502 COLLECTOR_FORWARDING_ERROR]
-    J -->|Unexpected| UE[RuntimeException<br/>→ 500 INTERNAL_ERROR]
+    J -->|202 OK| K["this entry: FORWARDED (accepted)"]
+    J -->|200 Dup| L["this entry: FORWARDED (duplicate)"]
+    J -->|400 Client| M["CollectorClientException<br/>this entry: FAILED"]
+    J -->|5xx × 3| N["CollectorForwardingException<br/>this entry: FAILED"]
+
+    G --> Agg{"Aggregate across every entry —<br/>did ANY entry forward or get skipped?"}
+    I --> Agg
+    FE --> Agg
+    K --> Agg
+    L --> Agg
+    M --> Agg
+    N --> Agg
+
+    Agg -->|Yes| R["→ 202 processed, or 200 skipped<br/>(events[] lists every entry's real outcome)"]
+    Agg -->|"No (every entry FAILED)"| X["re-throw the first entry's own exception"]
 
     C --> O[GlobalExceptionHandler<br/>plain JSON error body]
+    X --> O
     E --> P
-    FE --> P
-    G --> O
-    I --> O
-    K --> P
-    L --> P
-    M --> P
-    N --> O
-    UE --> O
+    R --> P
 
     O --> P[Return to source system]
 
+    style R fill:#e8f5e9
     style K fill:#e8f5e9
-    style L fill:#fff3e0
+    style L fill:#e8f5e9
     style E fill:#fff3e0
     style FE fill:#fff3e0
     style G fill:#ffebee
     style I fill:#ffebee
+    style M fill:#ffebee
     style N fill:#ffebee
-    style UE fill:#ffebee
+    style X fill:#ffebee
 ```
 
 ## 6. Component Dependency Graph

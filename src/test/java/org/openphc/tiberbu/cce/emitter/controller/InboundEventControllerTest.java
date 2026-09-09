@@ -46,10 +46,13 @@ class InboundEventControllerTest {
         given(inboundEventService.process(any())).willReturn(
                 InboundOutcome.accepted(ProcessedEventsResponse.from(List.of(
                         new TransformationResult(
-                                "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                                1,
                                 "Consent",
                                 "KE-SHRP-170CDF0A-1363-4972-B36A",
-                                TransformationResult.COLLECTOR_STATUS_ACCEPTED)))));
+                                "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                                TransformationResult.OUTCOME_FORWARDED,
+                                TransformationResult.COLLECTOR_STATUS_ACCEPTED,
+                                null)))));
 
         mockMvc.perform(post("/inbound")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -80,18 +83,21 @@ class InboundEventControllerTest {
     }
 
     @Test
-    @DisplayName("a filtered facility answers 200 skipped")
-    void returnsSkippedAcknowledgement() throws Exception {
+    @DisplayName("a filtered facility answers 200 skipped, with per-entry detail")
+    void returnsSkippedReceipt() throws Exception {
+        String filterDenialReason = "Event skipped by facility filter: facilityId='9999' source='tiberbu'";
         given(inboundEventService.process(any())).willReturn(InboundOutcome.skipped(
-                "Event skipped by facility filter: facilityId='9999' source='tiberbu'"));
+                ProcessedEventsResponse.from(List.of(
+                        TransformationResult.skipped(1, "Consent", "KE-SHRP-170CDF0A-1363-4972-B36A", filterDenialReason)))));
 
         mockMvc.perform(post("/inbound")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CONSENT_BUNDLE_ENVELOPE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("skipped"))
-                .andExpect(jsonPath("$.message")
-                        .value("Event skipped by facility filter: facilityId='9999' source='tiberbu'"));
+                .andExpect(jsonPath("$.eventsForwarded").value(0))
+                .andExpect(jsonPath("$.events[0].outcome").value("skipped"))
+                .andExpect(jsonPath("$.events[0].reason").value(filterDenialReason));
     }
 
     @Test
