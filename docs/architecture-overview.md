@@ -162,11 +162,13 @@ org.openphc.tiberbu.cce.emitter/
 │   ├── CloudEventDto.java                         #   CloudEvents v1.0 output DTO
 │   ├── InboundRequest.java                        #   Wraps incoming HTTP body + lowercased headers
 │   ├── SourceMetadata.java                        #   sourceIdentifier, facilityId, correlationId, traceId, bundleEntryIndex
+│   ├── BundleEntryResult.java                     #   One bundle entry's outcome: ready to forward, or already terminal (skipped/failed)
 │   ├── TransformationResult.java                  #   Per-event success/failure detail
 │   ├── InboundOutcome.java                        #   HTTP status + body returned to the controller
-│   ├── AcknowledgementResponse.java               #   Body for ignored / skipped outcomes
-│   ├── ProcessedEventsResponse.java               #   Typed success response body model
-│   └── CollectorResponse.java                     #   Response DTO from Collector
+│   ├── AcknowledgementResponse.java               #   Body for the ignored outcome
+│   ├── ProcessedEventsResponse.java               #   Typed success/skipped response body model
+│   ├── CollectorResponse.java                     #   Response DTO from Collector
+│   └── ErrorResponse.java                         #   {error: {code, message}, timestamp} — every GlobalExceptionHandler body
 │
 ├── exception/                                     # Custom exceptions
 │   ├── FhirMappingException.java                  #   FHIR parsing failures → 422
@@ -174,10 +176,10 @@ org.openphc.tiberbu.cce.emitter/
 │   ├── FacilityFilterRejectedException.java       #   Facility filter denial → caught in InboundEventService → 200 skipped
 │   ├── CollectorForwardingException.java          #   Retryable Collector errors (5xx/timeout) → 502
 │   ├── CollectorClientException.java              #   Non-retryable Collector errors (4xx)
-│   └── GlobalExceptionHandler.java                #   @ControllerAdvice for consistent error responses
+│   └── GlobalExceptionHandler.java                #   @RestControllerAdvice for consistent error responses
 ```
 
-**32 source files** across 9 packages.
+**37 source files** across 9 packages.
 
 ### Resources
 
@@ -257,7 +259,7 @@ Single `@Component` that reads `cce.emitter.source` config and transforms FHIR R
 
 ## 10. Error Handling Strategy
 
-Errors are handled by `GlobalExceptionHandler` (`@ControllerAdvice`):
+Errors are handled by `GlobalExceptionHandler` (`@RestControllerAdvice`):
 
 | Scenario | Action | HTTP Status |
 |----------|--------|-------------|
@@ -265,11 +267,12 @@ Errors are handled by `GlobalExceptionHandler` (`@ControllerAdvice`):
 | Facility filter denied (facility not in configured list) | Log + acknowledge | 200 OK with `status: "skipped"` |
 | FHIR resource unparseable | Log + reject | 422 with `FHIR_MAPPING_ERROR` |
 | Patient identifier not extractable | Log + reject | 400 with `PATIENT_ID_NOT_FOUND` |
-| Collector returns 400 | Log + return error | 400 (non-retryable) |
-| Collector returns 422 | Log + return error | 422 (non-retryable) |
+| Collector returns any 4xx (non-retryable) | Log + return error | the Collector's own status with `COLLECTOR_CLIENT_ERROR` |
 | Collector returns 200 (duplicate) | Log + return success | 200 (idempotent) |
-| Collector returns 500 | Retry with backoff (max 3) | 500 if all retries exhausted |
-| Collector unreachable | Retry with backoff (max 3) | 502 if all retries exhausted |
+| Collector returns 5xx | Retry with backoff (max 3) | 502 with `COLLECTOR_FORWARDING_ERROR` if all retries exhausted |
+| Collector unreachable (timeout/refused) | Retry with backoff (max 3) | 502 with `COLLECTOR_FORWARDING_ERROR` if all retries exhausted |
+| Unsupported HTTP method on `/inbound` | Log debug + reject | 405 with `METHOD_NOT_ALLOWED` (never reported as 500) |
+| Any other unanticipated exception | Log full details server-side + reject with a generic message | 500 with `INTERNAL_ERROR` (never the real exception's message or class name) |
 
 ## 11. Security
 

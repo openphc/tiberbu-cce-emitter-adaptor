@@ -388,21 +388,65 @@ No error is raised, nothing is forwarded to the Collector, and the caller should
 }
 ```
 
-### 4.4 Internal Server Error (500)
+### 4.4 FHIR Mapping Error (422)
 
-Caught by the global catch-all exception handler for any unexpected errors not covered by specific handlers.
+The entry's `resource` object could not be parsed as a FHIR R4 resource at all — malformed JSON reaching HAPI FHIR, not a missing field HAPI can tolerate.
 
 ```json
 {
   "error": {
-    "code": "INTERNAL_ERROR",
-    "message": "Unexpected error details"
+    "code": "FHIR_MAPPING_ERROR",
+    "message": "Failed to parse FHIR JSON for entry: unexpected token at line 1"
   },
   "timestamp": "2026-02-25T08:00:05Z"
 }
 ```
 
-### 4.5 Collector Forwarding Failure (502)
+### 4.5 Collector Client Error (4xx)
+
+The Collector itself rejected the forwarded CloudEvent — never retried, since retrying an event the Collector already rejected as invalid would fail identically every time. The HTTP status returned here is always the Collector's own status code, not a fixed one.
+
+```json
+{
+  "error": {
+    "code": "COLLECTOR_CLIENT_ERROR",
+    "message": "Collector returned 400: {\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"...\"}}"
+  },
+  "timestamp": "2026-02-25T08:00:05Z"
+}
+```
+
+### 4.6 Method Not Allowed (405)
+
+`/inbound` only maps `POST` — any other method (`GET`, `PUT`, `DELETE`, ...) is rejected explicitly as `405`, never as `500`.
+
+```json
+{
+  "error": {
+    "code": "METHOD_NOT_ALLOWED",
+    "message": "Request method 'GET' is not supported"
+  },
+  "timestamp": "2026-02-25T08:00:05Z"
+}
+```
+
+### 4.7 Internal Server Error (500)
+
+Caught by the global catch-all exception handler for any unexpected error not covered by a more specific handler above. The message is always this fixed, generic text — never the real exception's own message or class name, so nothing internal ever leaks into the response.
+
+```json
+{
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "message": "An unexpected error occurred"
+  },
+  "timestamp": "2026-02-25T08:00:05Z"
+}
+```
+
+### 4.8 Collector Forwarding Failure (502)
+
+Every retry attempt against the Collector was exhausted (5xx responses, or the Collector being unreachable — timeout/connection refused).
 
 ```json
 {
