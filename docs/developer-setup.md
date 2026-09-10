@@ -18,7 +18,7 @@
 ```bash
 # Clone the repository
 git clone <repo-url>
-cd cce-compliance-sub_system/emitter-adaptor
+cd tiberbu-cce-emitter-adaptor
 
 # Build (skipping tests for first-time setup)
 ./gradlew clean build -x test
@@ -33,7 +33,7 @@ cd cce-compliance-sub_system/emitter-adaptor
 ## 3. Project Structure
 
 ```
-emitter-adaptor/
+tiberbu-cce-emitter-adaptor/
 ├── build.gradle.kts              # Gradle build (Kotlin DSL)
 ├── settings.gradle.kts           # Project settings
 ├── gradlew                       # Gradle wrapper (Unix)
@@ -43,11 +43,11 @@ emitter-adaptor/
 ├── docker-compose.yml            # Local dev stack (WireMock Collector + adaptor)
 ├── .github/
 │   └── workflows/
+│       ├── BuildAndPushGHCR.yaml # Build, tag and push the image to GHCR
 │       └── sonarqube.yml         # JaCoCo + SonarQube Cloud analysis
 ├── gradle/
 │   └── wrapper/                  # Wrapper JAR + properties
 ├── wiremock/
-│   ├── __files/                  # WireMock response body files (unused so far)
 │   └── mappings/                 # WireMock stub mappings for Docker Compose
 │       └── collector-events.json
 ├── src/
@@ -59,6 +59,7 @@ emitter-adaptor/
 │   │   │   ├── adaptor/
 │   │   │   ├── cloudevents/
 │   │   │   ├── fhir/
+│   │   │   ├── filter/
 │   │   │   ├── service/
 │   │   │   ├── model/
 │   │   │   └── exception/
@@ -68,16 +69,12 @@ emitter-adaptor/
 │   │       ├── application-prod.yml
 │   │       └── logback-spring.xml
 │   └── test/
-│       ├── java/org/openphc/tiberbu/cce/emitter/
-│       │   ├── integration/            # Integration tests
-│       │   └── ...                     # Unit test packages
+│       ├── java/org/openphc/tiberbu/cce/emitter/  # mirrors the main package tree, plus the
+│       │                                           # top-level *IntegrationTest classes — see §13
 │       └── resources/
-│           ├── application-integration.yml
-│           ├── fhir/                   # FHIR test fixtures
-│           └── tiberbu/                # tibERbu test fixtures
-├── docs/
-└── .github/
-    └── copilot-instructions.md
+│           └── tiberbu/                # tibERbu bundle fixtures (consent, multi-entry,
+│                                        # Patient-only, malformed) — see §13
+└── docs/
 ```
 
 ## 4. Gradle Build Configuration
@@ -89,6 +86,8 @@ plugins {
     java
     id("org.springframework.boot") version "3.4.1"
     id("io.spring.dependency-management") version "1.1.7"
+    id("jacoco")
+    id("org.sonarqube") version "6.3.1.5724"
 }
 
 group = "org.openphc.tiberbu.cce"
@@ -129,6 +128,7 @@ dependencies {
 
     // Observability
     implementation("io.micrometer:micrometer-registry-prometheus")
+    implementation("net.logstash.logback:logstash-logback-encoder:7.4")
 
     // Lombok
     compileOnly("org.projectlombok:lombok")
@@ -148,6 +148,8 @@ tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     archiveBaseName = "tiberbu-cce-emitter-adaptor"
 }
 ```
+
+> The `jacoco`/`sonar` blocks are omitted here for brevity — see §14 for the full JaCoCo/SonarQube configuration.
 
 ### settings.gradle.kts
 
@@ -241,10 +243,10 @@ logging:
     org.openphc.tiberbu.cce: DEBUG
     org.springframework.web: INFO
   pattern:
-    console: "%d{ISO8601} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%d{ISO8601} [%thread] %-5level %logger{36} - correlationId=%X{correlationId} source=%X{source} eventType=%X{eventType} subject=%X{subject} - %msg%n"
 ```
 
-> **Note:** `logback-spring.xml` overrides the console pattern with MDC fields for dev (human-readable) and prod (JSON) profiles. The `logging.pattern.console` in YAML is a fallback.
+> **Note:** `logback-spring.xml` (added in E12) references this same `logging.pattern.console` property for the `!prod` profile via Spring Boot's `CONSOLE_LOG_PATTERN`, so the MDC fields above show up on every console line, populated only while forwarding an entry. The `prod` profile ignores this pattern entirely and emits single-line JSON instead (`net.logstash.logback.encoder.LogstashEncoder`, which includes every MDC key automatically) — see monitoring-alerting.md §5.1.
 
 ### application-dev.yml
 
@@ -289,19 +291,24 @@ cce:
       client-id: ${KEYCLOAK_CLIENT_ID:}
       client-secret: ${KEYCLOAK_CLIENT_SECRET:}
   emitter:
-    source: tiberbu
-
-logging:
-  level:
-    org.openphc.tiberbu.cce: INFO
-  pattern:
-    console: '{"timestamp":"%d{ISO8601}","level":"%level","logger":"%logger","message":"%msg"}%n'
+    source: ${EMITTER_SOURCE:tiberbu}
+    facility-filter:
+      ids: ${FACILITY_FILTER_IDS:}   # empty = filter inactive; comma-separated to restrict
 
 management:
   endpoint:
     health:
       show-details: never
+
+logging:
+  level:
+    org.openphc.tiberbu.cce: INFO
+    org.springframework.web: WARN
 ```
+
+> **No `logging.pattern.console` override here.** `logback-spring.xml`'s `prod` `<springProfile>` block takes over entirely and emits single-line JSON — see the note under `application.yml` above.
+>
+> **`EMITTER_SOURCE`, not `CCE_EMITTER_SOURCE`.** This is the one env var name in this file that doesn't follow the `CCE_`-prefixed pattern of its neighbors — worth double-checking against whatever sets it, since a `CCE_EMITTER_SOURCE` env var would silently do nothing here.
 
 ## 7. Docker Compose (Local Development)
 
@@ -498,7 +505,7 @@ Expected: `202 Accepted` with an `application/json` body of `{"status":"processe
 
 ### IntelliJ IDEA
 
-1. File → Open → select `emitter-adaptor/` folder
+1. File → Open → select `tiberbu-cce-emitter-adaptor/` folder
 2. IntelliJ auto-detects `build.gradle.kts` and imports
 3. Enable **Annotation Processing** (for Lombok): Settings → Build → Compiler → Annotation Processors → Enable
 4. Set Project SDK to Java 21
@@ -506,7 +513,7 @@ Expected: `202 Accepted` with an `application/json` body of `{"status":"processe
 ### VS Code
 
 1. Install "Extension Pack for Java" and "Spring Boot Extension Pack"
-2. Open `emitter-adaptor/` folder
+2. Open `tiberbu-cce-emitter-adaptor/` folder
 3. Java Language Server will auto-detect Gradle project
 4. Run/Debug via **Spring Boot Dashboard** panel
 
@@ -529,30 +536,40 @@ Expected: `202 Accepted` with an `application/json` body of `{"status":"processe
 ./gradlew test
 ```
 
-Unit tests use JUnit 5 + Spring Boot Test. Located in `src/test/java/` mirroring the main package structure.
+Unit and slice tests (JUnit 5 + Mockito, `@WebMvcTest`, WireMock-backed service-layer
+tests via `ApplicationContextRunner`) live in `src/test/java/`, mirroring the main
+package structure — e.g. `CollectorForwardingRetryTest` (retry-count and outbound
+auth-header behavior against a real, WireMock-stubbed Collector, through a real Spring
+context with `@EnableRetry` active, but without a real HTTP server).
 
 ### Integration Tests
 
 ```bash
-# Run integration tests only
+# Run all three full-pipeline integration test classes
 ./gradlew test --tests '*IntegrationTest'
 
-# Run a specific integration test
-./gradlew test --tests '*FullPipelineIntegrationTest'
+# Run one of them
+./gradlew test --tests 'FullPipelineIntegrationTest'
 ```
 
-Integration tests use `@ActiveProfiles("integration")` with `application-integration.yml`:
-- Random `server.port: 0` for test isolation
-- Programmatic `WireMockServer` + `@DynamicPropertySource` to inject Collector URL
-- Fast retry (100ms backoff)
+These are `@SpringBootTest(webEnvironment = RANDOM_PORT)` classes living directly under
+`src/test/java/org/openphc/tiberbu/cce/emitter/` (no separate `integration` package) —
+a real HTTP round trip through `POST /inbound`, a real Spring context, and a real
+WireMock server standing in for the Collector, wired in via `@DynamicPropertySource`
+(there is no `application-integration.yml` profile file — each class registers its own
+properties, including a short retry backoff, directly).
 
 | Test Class | Description |
 |------------|-------------|
-| `FullPipelineIntegrationTest` | End-to-end: bundle → CloudEvent(s) → Collector WireMock (happy path, `entry[0]` skipped when Patient, multi-entry fan-out, ignored and skipped outcomes, duplicate handling, correlation ID) |
-| `RetryIntegrationTest` | Retry behavior: 503→exhaustion→502, 422→no retry, retry→eventual success, 400→no retry |
-| `ActuatorMetricsIntegrationTest` | Health probes, Prometheus scrape, custom metric registration (uses `TestRestTemplate`, not MockMvc) |
+| `FullPipelineIntegrationTest` | End-to-end, one shared context: happy path (single + multi-entry bundles, exact deterministic event-id assertions), mixed outcome (one forwarded + one failed sibling), all five ignored-payload scenarios, the facility-filter skip path, and every failure path (Collector 400/500-exhausted/duplicate, unparseable FHIR, missing patient reference, `GET /inbound`) |
+| `CollectorAuthModePipelineIntegrationTest` | The three outbound Collector auth modes (static token, none configured, OAuth2 with token caching) — each nested class gets its own Spring context, since each needs a different `cce.collector.auth.*` binding |
+| `ActuatorMetricsIntegrationTest` | All custom Micrometer counters appear at `/actuator/prometheus` with correct tags after a mixed-outcome request, and MDC fields reach an actual log line (uses `TestRestTemplate`, not MockMvc) |
 
-**FHIR Fixtures:** `src/test/resources/fhir/encounter-visit.json`, `observation-lab.json`
+**tibERbu bundle fixtures:** `src/test/resources/tiberbu/` — `consent-bundle.json`,
+`multi-entry-bundle.json`, `patient-only-bundle.json`, `malformed-envelope.json`. Every
+other request body used by the integration tests is built inline in the test itself
+(e.g. the specific facility-filtered or unparseable-FHIR variants), rather than as a
+separate fixture file.
 
 ## 14. Code Quality — Coverage & SonarQube
 

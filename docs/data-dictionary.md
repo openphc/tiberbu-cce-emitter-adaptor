@@ -137,8 +137,30 @@ A `ResourceType/` prefix is stripped generically so `Organization/1302` resolves
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `server.port` | int | `8080` | Application HTTP port |
+| `server.port` | int | `8080` (`${SERVER_PORT:8080}`) | Application HTTP port |
+| `server.servlet.context-path` | String | `/` | Servlet context path |
+| `spring.application.name` | String | `tiberbu-cce-emitter-adaptor` | Spring application name |
+
+### 3.5 Actuator & Metrics Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
 | `management.endpoints.web.exposure.include` | String | `health,info,prometheus,metrics` | Exposed Actuator endpoints |
+| `management.endpoint.health.show-details` | String | `when-authorized` (`never` in prod) | How much detail `/actuator/health` reveals |
+| `management.endpoint.health.probes.enabled` | boolean | `true` | Enables the liveness/readiness probe groups |
+| `management.endpoint.prometheus.enabled` | boolean | `true` | Enables the `/actuator/prometheus` endpoint |
+| `management.health.livenessState.enabled` | boolean | `true` | Exposes `/actuator/health/liveness` |
+| `management.health.readinessState.enabled` | boolean | `true` | Exposes `/actuator/health/readiness` |
+| `management.prometheus.metrics.export.enabled` | boolean | `true` | Enables Prometheus metrics export |
+| `management.metrics.tags.application` | String | `tiberbu-cce-emitter-adaptor` | Common tag applied to every metric — see monitoring-alerting.md §1 |
+
+### 3.6 Logging Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `logging.level.org.openphc.tiberbu.cce` | String | `DEBUG` (`INFO` in prod) | Log level for this adaptor's own packages |
+| `logging.level.org.springframework.web` | String | `INFO` (`DEBUG` in dev, `WARN` in prod) | Log level for Spring MVC |
+| `logging.pattern.console` | String | see `application.yml` | Console pattern for the `!prod` profile — carries the MDC fields (`correlationId`/`source`/`eventType`/`subject`) inline. Superseded by `logback-spring.xml`'s single-line JSON encoder in `prod`; see monitoring-alerting.md §5.1. |
 
 ## 4. Collector Response Model
 
