@@ -2,6 +2,8 @@ plugins {
     java
     id("org.springframework.boot") version "3.4.1"
     id("io.spring.dependency-management") version "1.1.7"
+    id("jacoco")
+    id("org.sonarqube") version "6.3.1.5724"
 }
 
 group = "org.openphc.tiberbu.cce"
@@ -60,4 +62,36 @@ tasks.withType<Test> {
 
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     archiveBaseName = "tiberbu-cce-emitter-adaptor"
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required = true    // the format Sonar ingests
+        html.required = true   // for local browsing
+    }
+    // The @SpringBootApplication entry point's main() is never invoked by a
+    // @SpringBootTest run, and CollectorResponse.ErrorPayload is a plain,
+    // logic-free record — neither's coverage says anything about correctness.
+    classDirectories.setFrom(files(classDirectories.files.map {
+        fileTree(it) {
+            exclude(
+                "**/CceEmitterAdaptorApplication.class",
+                "**/model/CollectorResponse\$ErrorPayload.class"
+            )
+        }
+    }))
+}
+
+sonar {
+    properties {
+        property("sonar.organization", "openphc")
+        property("sonar.projectKey", "openphc_tiberbu-cce-emitter-adaptor")
+        property("sonar.coverage.jacoco.xmlReportPaths",
+            "${layout.buildDirectory.get()}/reports/jacoco/test/jacocoTestReport.xml")
+    }
+}
+
+tasks.named("sonar") {
+    dependsOn(tasks.jacocoTestReport)
 }
