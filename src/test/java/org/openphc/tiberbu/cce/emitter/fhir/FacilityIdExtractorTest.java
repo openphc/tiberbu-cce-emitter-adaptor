@@ -2,22 +2,41 @@ package org.openphc.tiberbu.cce.emitter.fhir;
 
 import ca.uhn.fhir.context.FhirContext;
 import org.hl7.fhir.instance.model.api.IBaseResource;
+import org.hl7.fhir.r4.model.AllergyIntolerance;
+import org.hl7.fhir.r4.model.Condition;
 import org.hl7.fhir.r4.model.Consent;
+import org.hl7.fhir.r4.model.Encounter;
+import org.hl7.fhir.r4.model.EpisodeOfCare;
+import org.hl7.fhir.r4.model.MedicationDispense;
+import org.hl7.fhir.r4.model.MedicationRequest;
 import org.hl7.fhir.r4.model.Observation;
 import org.hl7.fhir.r4.model.Patient;
+import org.hl7.fhir.r4.model.Procedure;
 import org.hl7.fhir.r4.model.Reference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Covers {@link FacilityIdExtractor}'s organization-reference resolution
- * (based on real tibERbu data), and the "always resolves to something,
- * never throws" contract.
+ * (based on a real survey of every resource type actually seen in tibERbu's
+ * production {@code inbound_event_log}), and the "always resolves to
+ * something, never throws" contract.
+ *
+ * <p>Only three resource types carry an accessor {@link FacilityIdExtractor}
+ * recognizes — {@code Consent.organization}, {@code Encounter.serviceProvider},
+ * {@code EpisodeOfCare.managingOrganization}. {@code MedicationDispense} and
+ * {@code Procedure} carry a {@code location} reference instead, which points
+ * at a {@code Location}, not an {@code Organization} — deliberately not
+ * treated as equivalent; see {@link DeliberatelyUnsupportedResourceTypes}.
  */
 class FacilityIdExtractorTest {
 
@@ -56,6 +75,87 @@ class FacilityIdExtractorTest {
             consent.setOrganization(List.of(new Reference(), new Reference("Organization/" + FACILITY_ID)));
 
             assertThat(facilityIdExtractor.extract(consent)).isEqualTo(FACILITY_ID);
+        }
+    }
+
+    @Nested
+    @DisplayName("Encounter.serviceProvider resolution")
+    class EncounterServiceProviderResolution {
+
+        @Test
+        @DisplayName("Encounter.serviceProvider resolves, with the Organization/ prefix stripped")
+        void extractsFromEncounterServiceProvider() {
+            Encounter encounter = new Encounter();
+            encounter.setServiceProvider(new Reference("Organization/" + FACILITY_ID));
+
+            assertThat(facilityIdExtractor.extract(encounter)).isEqualTo(FACILITY_ID);
+        }
+
+        @Test
+        @DisplayName("an unpopulated Encounter.serviceProvider resolves to null")
+        void unpopulatedServiceProviderResolvesToNull() {
+            assertThat(facilityIdExtractor.extract(new Encounter())).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("EpisodeOfCare.managingOrganization resolution")
+    class EpisodeOfCareManagingOrganizationResolution {
+
+        @Test
+        @DisplayName("EpisodeOfCare.managingOrganization resolves, with the Organization/ prefix stripped")
+        void extractsFromEpisodeOfCareManagingOrganization() {
+            EpisodeOfCare episodeOfCare = new EpisodeOfCare();
+            episodeOfCare.setManagingOrganization(new Reference("Organization/" + FACILITY_ID));
+
+            assertThat(facilityIdExtractor.extract(episodeOfCare)).isEqualTo(FACILITY_ID);
+        }
+
+        @Test
+        @DisplayName("an unpopulated EpisodeOfCare.managingOrganization resolves to null")
+        void unpopulatedManagingOrganizationResolvesToNull() {
+            assertThat(facilityIdExtractor.extract(new EpisodeOfCare())).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("resource types deliberately NOT supported, per the real production data survey")
+    class DeliberatelyUnsupportedResourceTypes {
+
+        @Test
+        @DisplayName("MedicationDispense.location is a Location/ reference, not treated as a facility reference")
+        void medicationDispenseLocationIsNotTreatedAsFacilityReference() {
+            MedicationDispense medicationDispense = new MedicationDispense();
+            medicationDispense.setLocation(new Reference("Location/some-location-id"));
+
+            assertThat(facilityIdExtractor.extract(medicationDispense)).isNull();
+        }
+
+        @Test
+        @DisplayName("Procedure.location is a Location/ reference, not treated as a facility reference")
+        void procedureLocationIsNotTreatedAsFacilityReference() {
+            Procedure procedure = new Procedure();
+            procedure.setLocation(new Reference("Location/some-location-id"));
+
+            assertThat(facilityIdExtractor.extract(procedure)).isNull();
+        }
+
+        @Test
+        @DisplayName("AllergyIntolerance has no organization-equivalent field at all")
+        void allergyIntoleranceResolvesToNull() {
+            assertThat(facilityIdExtractor.extract(new AllergyIntolerance())).isNull();
+        }
+
+        @Test
+        @DisplayName("Condition has no organization-equivalent field at all")
+        void conditionResolvesToNull() {
+            assertThat(facilityIdExtractor.extract(new Condition())).isNull();
+        }
+
+        @Test
+        @DisplayName("MedicationRequest has no organization-equivalent field at all")
+        void medicationRequestResolvesToNull() {
+            assertThat(facilityIdExtractor.extract(new MedicationRequest())).isNull();
         }
     }
 
@@ -137,70 +237,78 @@ class FacilityIdExtractorTest {
     }
 
     @Nested
-    @DisplayName("a real tibERbu payload, parsed rather than hand-built")
+    @DisplayName("real tibERbu payloads, parsed rather than hand-built")
     class RealTibErbuPayload {
+
+        private final FhirResourceParser fhirResourceParser = new FhirResourceParser(FhirContext.forR4());
 
         /**
          * The {@code Consent} resource from {@code entry[1]} of a real tibERbu
-         * Verified Consent bundle, byte-for-byte — same fixture E5's
-         * {@code PatientIdExtractorTest} uses, proving facility extraction is
+         * Verified Consent bundle, byte-for-byte — shared with {@code
+         * PatientIdExtractorTest} (both load {@code fhir/consent.json} rather
+         * than each carrying their own copy), proving facility extraction is
          * unaffected by the resource's full real-world noise ({@code verification},
          * {@code performer}, {@code policyRule}, {@code provision}, ...) and by the
          * {@code performer} entry that references a {@code Patient}, not an
          * {@code Organization} — a different field this extractor must not confuse
          * with {@code organization}.
          */
-        private static final String REAL_CONSENT_RESOURCE_JSON = """
-                {
-                  "resourceType": "Consent",
-                  "id": "VCR-20260901-57098420",
-                  "meta": {
-                    "profile": ["https://nshr-uat.sha.go.ke/fhir/StructureDefinition/ke-consent"],
-                    "lastUpdated": "2026-09-01T12:21:18.706261+00:00",
-                    "security": [{"system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality", "code": "N", "display": "Normal"}]
-                  },
-                  "text": {"status": "generated", "div": "<div xmlns=\\"http://www.w3.org/1999/xhtml\\">Consent to access patient records</div>"},
-                  "verification": [{
-                    "verified": true,
-                    "extension": [{
-                      "url": "https://nshr-uat.sha.go.ke/fhir/StructureDefinition/consent-verification-channel",
-                      "valueCodeableConcept": {"coding": [{"system": "https://nshr-uat.sha.go.ke/fhir/CodeSystem/consent-verification-channel", "code": "otp", "display": "OTP"}]}
-                    }],
-                    "verificationDate": "2026-09-01T12:21:18.706268+00:00"
-                  }],
-                  "status": "active",
-                  "scope": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentscope", "code": "patient-privacy", "display": "Privacy Consent"}]},
-                  "category": [{"coding": [{"system": "http://loinc.org", "code": "59284-0", "display": "Patient Consent"}]}],
-                  "patient": {"reference": "Patient/KE-SHRP-170CDF0A-1363-4972-B36A", "display": "TIMOTHY NJIBU"},
-                  "dateTime": "2026-09-01T11:55:32.412581+00:00",
-                  "performer": [{"reference": "Patient/KE-SHRP-170CDF0A-1363-4972-B36A"}],
-                  "organization": [{"reference": "Organization/KE-SHRF-D601602F-C9AC-4CC5-9347", "display": "KAMIRITHU ST. CHARLES LWANGA CATHOLIC HEALTH CENTRE"}],
-                  "policyRule": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentpolicycodes", "code": "hipaa-auth", "display": "HIPAA Authorization"}]},
-                  "provision": {
-                    "type": "permit",
-                    "period": {"start": "2026-09-01"},
-                    "action": [
-                      {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentaction", "code": "access", "display": "Access"}]},
-                      {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentaction", "code": "collect", "display": "Collect"}]},
-                      {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentaction", "code": "use", "display": "Use"}]}
-                    ],
-                    "purpose": [
-                      {"system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "TREAT", "display": "Treatment"},
-                      {"system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "HPAYMT", "display": "Healthcare Payment"},
-                      {"system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "HOPERAT", "display": "Healthcare Operations"}
-                    ]
-                  }
-                }""";
-
-        private final FhirResourceParser fhirResourceParser = new FhirResourceParser(FhirContext.forR4());
-
         @Test
         @DisplayName("the real Consent resource, parsed by FhirResourceParser, still extracts the correct facility ID")
         void extractsFromTheRealParsedConsentResource() {
-            IBaseResource parsedConsent = fhirResourceParser.parse(REAL_CONSENT_RESOURCE_JSON);
+            IBaseResource parsedConsent = fhirResourceParser.parse(loadFixture("consent.json"));
 
             assertThat(facilityIdExtractor.extract(parsedConsent))
                     .isEqualTo("KE-SHRF-D601602F-C9AC-4CC5-9347");
+        }
+
+        /**
+         * The {@code Encounter} resource from a real tibERbu triage encounter,
+         * pulled from {@code inbound_event_log.raw_payload} (the {@code data}
+         * field), byte-for-byte — proving {@code serviceProvider} extraction
+         * against real-world noise: a {@code participant.individual} reference
+         * to a {@code Practitioner}, and an {@code episodeOfCare} reference to
+         * an {@code EpisodeOfCare}, neither of which this extractor must confuse
+         * with {@code serviceProvider}.
+         */
+        @Test
+        @DisplayName("the real Encounter resource, parsed by FhirResourceParser, still extracts the correct facility ID")
+        void extractsFromTheRealParsedEncounterResource() {
+            IBaseResource parsedEncounter = fhirResourceParser.parse(loadFixture("encounter.json"));
+
+            assertThat(facilityIdExtractor.extract(parsedEncounter))
+                    .isEqualTo("KE-SHRF-F75DBB8A-E36C-44DE-95F4");
+        }
+
+        /**
+         * The {@code EpisodeOfCare} resource from a real tibERbu inpatient
+         * episode, pulled from {@code inbound_event_log.raw_payload} (the
+         * {@code data} field), byte-for-byte — proving {@code
+         * managingOrganization} extraction against real-world noise: a {@code
+         * patient} reference and a {@code careManager} reference to a {@code
+         * Practitioner}, neither of which this extractor must confuse with
+         * {@code managingOrganization}.
+         */
+        @Test
+        @DisplayName("the real EpisodeOfCare resource, parsed by FhirResourceParser, still extracts the correct facility ID")
+        void extractsFromTheRealParsedEpisodeOfCareResource() {
+            IBaseResource parsedEpisodeOfCare = fhirResourceParser.parse(loadFixture("episode-of-care.json"));
+
+            assertThat(facilityIdExtractor.extract(parsedEpisodeOfCare))
+                    .isEqualTo("KE-SHRF-86BD8E14-140B-4A55-8F6C");
+        }
+
+        /** Reads {@code src/test/resources/fhir/<fileName>} from the classpath — the fixture files themselves are shared with {@code PatientIdExtractorTest}, though each test class loads them independently. */
+        private static String loadFixture(String fileName) {
+            try (InputStream fixtureStream = RealTibErbuPayload.class.getClassLoader()
+                    .getResourceAsStream("fhir/" + fileName)) {
+                if (fixtureStream == null) {
+                    throw new IllegalStateException("Fixture not found on classpath: fhir/" + fileName);
+                }
+                return new String(fixtureStream.readAllBytes(), StandardCharsets.UTF_8);
+            } catch (IOException fixtureReadFailure) {
+                throw new UncheckedIOException(fixtureReadFailure);
+            }
         }
     }
 }

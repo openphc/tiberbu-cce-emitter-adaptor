@@ -1,0 +1,103 @@
+{
+  "resourceType": "PlanDefinition",
+  "id": "tiberbu-service-protocol",
+  "url": "http://openphc.org/PlanDefinition/tiberbu-service-protocol",
+  "version": "1.0.0",
+  "name": "TiberbuServiceProtocol",
+  "title": "tibERbu Service Protocol",
+  "status": "active",
+  "date": "2026-09-10",
+  "description": "Tracks a patient's progress through tibERbu-sourced clinical events. Currently covers Consent, from initiation through verification: step patient-consent-initiated matches a proposed, unverified Patient Consent (LOINC 59284-0) — see artifacts/Consent Payload Structures - OTP, Afyayangu, Biometrics.json. Its sub-step patient-consent-verified matches the same Consent once verification completes (status flips to active, verification.verified flips to true) — see artifacts/Consent Payload Structures - Verified Consent.json. Each step combines a Tier-1 structural codeFilter (status + category) with a Tier-2 FHIRPath condition on verification.verified; neither step restricts which verification channel (OTP/Afyayangu/Biometrics) was used. Further tibERbu event types (Encounter, EpisodeOfCare, ...) are expected to be added as additional top-level steps over time.",
+  "action": [
+    {
+      "id": "patient-consent-initiated",
+      "title": "Patient Consent Initiated",
+      "type": {
+        "coding": [
+          { "system": "http://openphc.org/fhir/CodeSystem/action-type", "code": "step" }
+        ]
+      },
+      "trigger": [
+        {
+          "type": "named-event",
+          "name": "patient-consent-initiated-trigger",
+          "data": [
+            {
+              "type": "Consent",
+              "codeFilter": [
+                {
+                  "path": "status",
+                  "code": [ { "code": "proposed" } ]
+                },
+                {
+                  "path": "category",
+                  "code": [ { "system": "http://loinc.org", "code": "59284-0", "display": "Patient Consent" } ]
+                }
+              ]
+            }
+          ],
+          "condition": {
+            "language": "text/fhirpath",
+            "expression": "Consent.verification.where(verified = false).exists()"
+          }
+        }
+      ],
+      "description": "A Patient Consent proposed but not yet verified: Consent.status = 'proposed', Consent.category = LOINC 59284-0 (Patient Consent) — both Tier-1 structural codeFilters. The FHIRPath condition (Tier 2) confirms verification.verified = false. No restriction on which verification channel (OTP/Afyayangu/Biometrics) was used.",
+      "timingTiming": {
+        "repeat": { "count": 1, "period": 1, "frequency": 1, "periodUnit": "d" }
+      },
+      "requiredBehavior": "must",
+      "action": [
+        {
+          "id": "patient-consent-verified",
+          "title": "Patient Consent Verified",
+          "type": {
+            "coding": [
+              { "system": "http://openphc.org/fhir/CodeSystem/action-type", "code": "step" }
+            ]
+          },
+          "trigger": [
+            {
+              "type": "named-event",
+              "name": "patient-consent-verified-trigger",
+              "data": [
+                {
+                  "type": "Consent",
+                  "codeFilter": [
+                    {
+                      "path": "status",
+                      "code": [ { "code": "active" } ]
+                    },
+                    {
+                      "path": "category",
+                      "code": [ { "system": "http://loinc.org", "code": "59284-0", "display": "Patient Consent" } ]
+                    }
+                  ]
+                }
+              ],
+              "condition": {
+                "language": "text/fhirpath",
+                "expression": "Consent.verification.where(verified = true).exists()"
+              }
+            }
+          ],
+          "extension": [
+            { "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days", "valueInteger": 1 }
+          ],
+          "description": "The same Patient Consent, now verified: Consent.status = 'active', Consent.category = LOINC 59284-0 (Patient Consent) — both Tier-1 structural codeFilters. The FHIRPath condition (Tier 2) confirms verification.verified = true. Sub-step of patient-consent-initiated.",
+          "timingTiming": {
+            "repeat": { "count": 1, "period": 1, "frequency": 1, "periodUnit": "d" }
+          },
+          "relatedAction": [
+            {
+              "actionId": "patient-consent-initiated",
+              "relationship": "after-end",
+              "offsetDuration": { "value": 0, "unit": "d", "system": "http://unitsofmeasure.org", "code": "d" }
+            }
+          ],
+          "requiredBehavior": "must"
+        }
+      ]
+    }
+  ]
+}
