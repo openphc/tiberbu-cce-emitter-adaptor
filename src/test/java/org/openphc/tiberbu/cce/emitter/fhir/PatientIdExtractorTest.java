@@ -15,6 +15,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.openphc.tiberbu.cce.emitter.exception.PatientIdNotFoundException;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -163,9 +168,13 @@ class PatientIdExtractorTest {
     @DisplayName("a real tibERbu payload, parsed rather than hand-built")
     class RealTibErbuPayload {
 
+        private final FhirResourceParser fhirResourceParser = new FhirResourceParser(FhirContext.forR4());
+
         /**
          * The {@code Consent} resource from {@code entry[1]} of a real tibERbu
-         * Verified Consent bundle, byte-for-byte — every other test above builds a
+         * Verified Consent bundle, byte-for-byte — loaded from {@code
+         * fhir/consent.json}, shared with {@code FacilityIdExtractorTest} rather
+         * than each carrying their own copy. Every other test above builds a
          * minimal {@code Consent} with only {@code patient} set, so this one proves
          * extraction still lands on the right field once HAPI parses the real
          * resource's full noise: {@code verification}, {@code scope},
@@ -174,57 +183,26 @@ class PatientIdExtractorTest {
          * field extraction must not be confused by), {@code organization},
          * {@code policyRule}, and {@code provision}.
          */
-        private static final String REAL_CONSENT_RESOURCE_JSON = """
-                {
-                  "resourceType": "Consent",
-                  "id": "VCR-20260901-57098420",
-                  "meta": {
-                    "profile": ["https://nshr-uat.sha.go.ke/fhir/StructureDefinition/ke-consent"],
-                    "lastUpdated": "2026-09-01T12:21:18.706261+00:00",
-                    "security": [{"system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality", "code": "N", "display": "Normal"}]
-                  },
-                  "text": {"status": "generated", "div": "<div xmlns=\\"http://www.w3.org/1999/xhtml\\">Consent to access patient records</div>"},
-                  "verification": [{
-                    "verified": true,
-                    "extension": [{
-                      "url": "https://nshr-uat.sha.go.ke/fhir/StructureDefinition/consent-verification-channel",
-                      "valueCodeableConcept": {"coding": [{"system": "https://nshr-uat.sha.go.ke/fhir/CodeSystem/consent-verification-channel", "code": "otp", "display": "OTP"}]}
-                    }],
-                    "verificationDate": "2026-09-01T12:21:18.706268+00:00"
-                  }],
-                  "status": "active",
-                  "scope": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentscope", "code": "patient-privacy", "display": "Privacy Consent"}]},
-                  "category": [{"coding": [{"system": "http://loinc.org", "code": "59284-0", "display": "Patient Consent"}]}],
-                  "patient": {"reference": "Patient/KE-SHRP-170CDF0A-1363-4972-B36A", "display": "TIMOTHY NJIBU"},
-                  "dateTime": "2026-09-01T11:55:32.412581+00:00",
-                  "performer": [{"reference": "Patient/KE-SHRP-170CDF0A-1363-4972-B36A"}],
-                  "organization": [{"reference": "Organization/KE-SHRF-D601602F-C9AC-4CC5-9347", "display": "KAMIRITHU ST. CHARLES LWANGA CATHOLIC HEALTH CENTRE"}],
-                  "policyRule": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentpolicycodes", "code": "hipaa-auth", "display": "HIPAA Authorization"}]},
-                  "provision": {
-                    "type": "permit",
-                    "period": {"start": "2026-09-01"},
-                    "action": [
-                      {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentaction", "code": "access", "display": "Access"}]},
-                      {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentaction", "code": "collect", "display": "Collect"}]},
-                      {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentaction", "code": "use", "display": "Use"}]}
-                    ],
-                    "purpose": [
-                      {"system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "TREAT", "display": "Treatment"},
-                      {"system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "HPAYMT", "display": "Healthcare Payment"},
-                      {"system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "HOPERAT", "display": "Healthcare Operations"}
-                    ]
-                  }
-                }""";
-
-        private final FhirResourceParser fhirResourceParser = new FhirResourceParser(FhirContext.forR4());
-
         @Test
         @DisplayName("the real Consent resource, parsed by FhirResourceParser, still extracts the correct patient identifier")
         void extractsFromTheRealParsedConsentResource() {
-            IBaseResource parsedConsent = fhirResourceParser.parse(REAL_CONSENT_RESOURCE_JSON);
+            IBaseResource parsedConsent = fhirResourceParser.parse(loadFixture("consent.json"));
 
             assertThat(patientIdExtractor.extract(parsedConsent))
                     .isEqualTo("KE-SHRP-170CDF0A-1363-4972-B36A");
+        }
+
+        /** Reads {@code src/test/resources/fhir/<fileName>} from the classpath — the fixture files themselves are shared with {@code FacilityIdExtractorTest}, though each test class loads them independently. */
+        private static String loadFixture(String fileName) {
+            try (InputStream fixtureStream = RealTibErbuPayload.class.getClassLoader()
+                    .getResourceAsStream("fhir/" + fileName)) {
+                if (fixtureStream == null) {
+                    throw new IllegalStateException("Fixture not found on classpath: fhir/" + fileName);
+                }
+                return new String(fixtureStream.readAllBytes(), StandardCharsets.UTF_8);
+            } catch (IOException fixtureReadFailure) {
+                throw new UncheckedIOException(fixtureReadFailure);
+            }
         }
     }
 }

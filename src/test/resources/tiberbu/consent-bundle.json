@@ -38,7 +38,7 @@
             "reference": "Patient/KE-SHRP-170CDF0A-1363-4972-B36A"
           },
           "organization": [
-            { "reference": "Organization/FAC-0001" }
+            { "reference": "Organization/FAC-0001", "display": "Kamiriithu Health Centre" }
           ]
         }
       }

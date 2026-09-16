@@ -10,6 +10,7 @@ import org.openphc.tiberbu.cce.emitter.exception.PatientIdNotFoundException;
 import org.openphc.tiberbu.cce.emitter.exception.FacilityFilterRejectedException;
 import org.openphc.tiberbu.cce.emitter.fhir.BundleEntry;
 import org.openphc.tiberbu.cce.emitter.fhir.BundleEntryExtractor;
+import org.openphc.tiberbu.cce.emitter.fhir.FacilityDetails;
 import org.openphc.tiberbu.cce.emitter.fhir.FacilityIdExtractor;
 import org.openphc.tiberbu.cce.emitter.fhir.FhirResourceParser;
 import org.openphc.tiberbu.cce.emitter.fhir.PatientIdExtractor;
@@ -135,10 +136,12 @@ public class SourceAdaptorService {
         try {
             IBaseResource resource = fhirResourceParser.parse(bundleEntry.resourceJson());
             patientId = patientIdExtractor.extract(resource);
-            String facilityId = facilityIdExtractor.extract(resource);
+            FacilityDetails facilityDetails = facilityIdExtractor.extract(resource);
+            String facilityId = facilityDetails != null ? facilityDetails.facilityId() : null;
+            String facilityName = facilityDetails != null ? facilityDetails.facilityName() : null;
 
             SourceMetadata sourceMetadata = new SourceMetadata(
-                    sourceIdentifier, facilityId, correlationId, eventTime, sourcePath, traceId, bundleEntry.bundleEntryIndex());
+                    sourceIdentifier, facilityId, facilityName, correlationId, eventTime, sourcePath, traceId, bundleEntry.bundleEntryIndex());
 
             try {
                 facilityFilter.enforceFilter(facilityId, sourceIdentifier);

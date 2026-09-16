@@ -37,7 +37,8 @@ class CloudEventEnvelopeBuilderTest {
             new CloudEventEnvelopeBuilder(new EventIdGenerator(), new ObjectMapper());
 
     private SourceMetadata sourceMetadata(String traceId, int bundleEntryIndex) {
-        return new SourceMetadata("tiberbu", "FAC-0001", "7f3c9b12-4d5e-4a6b-8c7d-9e0f1a2b3c4d",
+        return new SourceMetadata("tiberbu", "FAC-0001", "Kamiriithu Health Centre",
+                "7f3c9b12-4d5e-4a6b-8c7d-9e0f1a2b3c4d",
                 FIXED_EVENT_TIME, "/inbound", traceId, bundleEntryIndex);
     }
 
@@ -59,6 +60,7 @@ class CloudEventEnvelopeBuilderTest {
             assertThat(cloudEvent.time()).isEqualTo("2026-09-01T11:55:42.118Z");
             assertThat(cloudEvent.datacontenttype()).isEqualTo("application/fhir+json");
             assertThat(cloudEvent.facilityid()).isEqualTo("FAC-0001");
+            assertThat(cloudEvent.facilityname()).isEqualTo("Kamiriithu Health Centre");
             assertThat(cloudEvent.correlationid()).isEqualTo("7f3c9b12-4d5e-4a6b-8c7d-9e0f1a2b3c4d");
             assertThat(cloudEvent.sourceeventid()).isNull();
             assertThat(cloudEvent.id()).isNotBlank();
@@ -115,6 +117,20 @@ class CloudEventEnvelopeBuilderTest {
         }
 
         @Test
+        @DisplayName("facilityname is entirely absent from the serialized JSON when null, not present as null")
+        void facilityNameIsAbsentFromSerializedJsonWhenNull() throws Exception {
+            SourceMetadata metadataWithNoFacilityName = new SourceMetadata(
+                    "tiberbu", "FAC-0001", null, "7f3c9b12-4d5e-4a6b-8c7d-9e0f1a2b3c4d",
+                    FIXED_EVENT_TIME, "/inbound", "ef1cb56375", 1);
+            CloudEventDto cloudEvent = cloudEventEnvelopeBuilder.build(
+                    CONSENT_JSON, "KE-SHRP-170CDF0A-1363-4972-B36A", "Consent", metadataWithNoFacilityName);
+
+            String serialized = new ObjectMapper().writeValueAsString(cloudEvent);
+
+            assertThat(serialized).doesNotContain("facilityname");
+        }
+
+        @Test
         @DisplayName("every extension attribute name is lowercase")
         void extensionAttributeNamesAreLowercase() throws Exception {
             CloudEventDto cloudEvent = cloudEventEnvelopeBuilder.build(
@@ -124,7 +140,7 @@ class CloudEventEnvelopeBuilderTest {
             String serialized = new ObjectMapper().writeValueAsString(cloudEvent);
 
             assertThat(serialized).contains(
-                    "\"specversion\"", "\"datacontenttype\"", "\"facilityid\"", "\"correlationid\"");
+                    "\"specversion\"", "\"datacontenttype\"", "\"facilityid\"", "\"facilityname\"", "\"correlationid\"");
         }
     }
 

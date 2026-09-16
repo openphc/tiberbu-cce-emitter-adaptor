@@ -1,0 +1,40 @@
+{
+  "resourceType": "Consent",
+  "id": "VCR-20260901-57098420",
+  "meta": {
+    "profile": ["https://nshr-uat.sha.go.ke/fhir/StructureDefinition/ke-consent"],
+    "lastUpdated": "2026-09-01T12:21:18.706261+00:00",
+    "security": [{"system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality", "code": "N", "display": "Normal"}]
+  },
+  "text": {"status": "generated", "div": "<div xmlns=\"http://www.w3.org/1999/xhtml\">Consent to access patient records</div>"},
+  "verification": [{
+    "verified": true,
+    "extension": [{
+      "url": "https://nshr-uat.sha.go.ke/fhir/StructureDefinition/consent-verification-channel",
+      "valueCodeableConcept": {"coding": [{"system": "https://nshr-uat.sha.go.ke/fhir/CodeSystem/consent-verification-channel", "code": "otp", "display": "OTP"}]}
+    }],
+    "verificationDate": "2026-09-01T12:21:18.706268+00:00"
+  }],
+  "status": "active",
+  "scope": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentscope", "code": "patient-privacy", "display": "Privacy Consent"}]},
+  "category": [{"coding": [{"system": "http://loinc.org", "code": "59284-0", "display": "Patient Consent"}]}],
+  "patient": {"reference": "Patient/KE-SHRP-170CDF0A-1363-4972-B36A", "display": "TIMOTHY NJIBU"},
+  "dateTime": "2026-09-01T11:55:32.412581+00:00",
+  "performer": [{"reference": "Patient/KE-SHRP-170CDF0A-1363-4972-B36A"}],
+  "organization": [{"reference": "Organization/KE-SHRF-D601602F-C9AC-4CC5-9347", "display": "KAMIRITHU ST. CHARLES LWANGA CATHOLIC HEALTH CENTRE"}],
+  "policyRule": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentpolicycodes", "code": "hipaa-auth", "display": "HIPAA Authorization"}]},
+  "provision": {
+    "type": "permit",
+    "period": {"start": "2026-09-01"},
+    "action": [
+      {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentaction", "code": "access", "display": "Access"}]},
+      {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentaction", "code": "collect", "display": "Collect"}]},
+      {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/consentaction", "code": "use", "display": "Use"}]}
+    ],
+    "purpose": [
+      {"system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "TREAT", "display": "Treatment"},
+      {"system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "HPAYMT", "display": "Healthcare Payment"},
+      {"system": "http://terminology.hl7.org/CodeSystem/v3-ActReason", "code": "HOPERAT", "display": "Healthcare Operations"}
+    ]
+  }
+}

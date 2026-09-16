@@ -27,7 +27,7 @@ class EventIdGeneratorTest {
     private final EventIdGenerator eventIdGenerator = new EventIdGenerator();
 
     private SourceMetadata metadataWithTraceId(String traceId, int bundleEntryIndex) {
-        return new SourceMetadata(SOURCE, "FAC-0001", "corr-id", OffsetDateTime.now(ZoneOffset.UTC),
+        return new SourceMetadata(SOURCE, "FAC-0001", null, "corr-id", OffsetDateTime.now(ZoneOffset.UTC),
                 "/inbound", traceId, bundleEntryIndex);
     }
 

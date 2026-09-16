@@ -66,7 +66,7 @@ class InboundEventServiceTest {
 
     private CloudEventDto cloudEvent(String type) {
         return new CloudEventDto("1.0", "evt-" + type, "tiberbu", type, PATIENT_ID,
-                "2026-09-01T11:55:42.118Z", "application/fhir+json", "FAC-0001", null,
+                "2026-09-01T11:55:42.118Z", "application/fhir+json", "FAC-0001", null, null,
                 "corr-1", new ObjectMapper().createObjectNode().put("resourceType", type));
     }
 

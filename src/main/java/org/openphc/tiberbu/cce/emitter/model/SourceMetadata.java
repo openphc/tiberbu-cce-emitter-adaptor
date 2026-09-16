@@ -25,6 +25,11 @@ import java.time.OffsetDateTime;
  * @param facilityId        this entry's resolved facility ID from {@code
  *                          FacilityIdExtractor}; {@code null} when the
  *                          resource has no {@code organization} reference
+ * @param facilityName      this entry's resolved facility display name from
+ *                          {@code FacilityIdExtractor}, read from the same
+ *                          organization reference's {@code display} field;
+ *                          {@code null} whenever {@link #facilityId} is, and
+ *                          also when the reference carries no display
  * @param correlationId     an adaptor-generated UUID, never {@code null}
  * @param eventTime         the adaptor's own processing time in UTC — never
  *                          {@code meta.timestamp} from the inbound envelope
@@ -42,6 +47,7 @@ import java.time.OffsetDateTime;
 public record SourceMetadata(
         String sourceIdentifier,
         String facilityId,
+        String facilityName,
         String correlationId,
         OffsetDateTime eventTime,
         String sourcePath,

@@ -189,6 +189,7 @@ curl -X POST http://localhost:8080/inbound \
   "time": "2026-09-01T11:55:42.118Z",
   "datacontenttype": "application/fhir+json",
   "facilityid": "FAC-0001",
+  "facilityname": "Kamiriithu Health Centre",
   "correlationid": "7f3c9b12-4d5e-4a6b-8c7d-9e0f1a2b3c4d",
   "data": {
     "resourceType": "Consent",
@@ -210,6 +211,7 @@ How each attribute is derived:
 | `subject` | `KE-SHRP-170CDF0A-1363-4972-B36A` | `Consent.patient.reference`, `Patient/` prefix stripped |
 | `time` | `2026-09-01T11:55:42.118Z` | Adaptor processing time (UTC) — not `meta.timestamp` |
 | `facilityid` | `FAC-0001` | Extracted from the FHIR resource (`FacilityIdExtractor`) |
+| `facilityname` | `Kamiriithu Health Centre` | The same organization reference's `display` field (`FacilityIdExtractor`); `null`/omitted whenever `facilityid` is, or when the reference carries no `display` |
 | `sourceeventid` | *(not populated)* | Not populated |
 | `correlationid` | `7f3c9b12-…` | Adaptor-generated |
 | `data` | the `Consent` resource | `entry[1].resource`, verbatim |

@@ -162,7 +162,7 @@ class FullPipelineIntegrationTest {
     }
 
     private static String deterministicEventId(String traceId, String entryResourceId) {
-        SourceMetadata metadata = new SourceMetadata(null, null, null, null, null, traceId, 0);
+        SourceMetadata metadata = new SourceMetadata(null, null, null, null, null, null, traceId, 0);
         return EVENT_ID_GENERATOR.generate(metadata, entryResourceId);
     }
 
@@ -200,6 +200,7 @@ class FullPipelineIntegrationTest {
             assertThat(cloudEvent.path("type").asText()).isEqualTo("Consent");
             assertThat(cloudEvent.path("subject").asText()).isEqualTo("KE-SHRP-170CDF0A-1363-4972-B36A");
             assertThat(cloudEvent.path("facilityid").asText()).isEqualTo(ALLOWED_FACILITY);
+            assertThat(cloudEvent.path("facilityname").asText()).isEqualTo("Kamiriithu Health Centre");
             assertThat(cloudEvent.path("datacontenttype").asText()).isEqualTo("application/fhir+json");
             assertThat(cloudEvent.has("sourceeventid")).as("sourceeventid is omitted, never null").isFalse();
             assertThat(cloudEvent.path("correlationid").asText())

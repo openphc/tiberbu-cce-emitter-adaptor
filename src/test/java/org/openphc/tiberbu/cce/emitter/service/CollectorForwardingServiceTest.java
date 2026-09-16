@@ -80,7 +80,7 @@ class CollectorForwardingServiceTest {
         JsonNode data = new ObjectMapper().createObjectNode().put("resourceType", "Consent");
         return new CloudEventDto("1.0", "evt-001", "tiberbu", "Consent",
                 "KE-SHRP-170CDF0A-1363-4972-B36A", "2026-09-01T11:55:42.118Z",
-                "application/fhir+json", "FAC-0001", null, "corr-1", data);
+                "application/fhir+json", "FAC-0001", null, null, "corr-1", data);
     }
 
     @Nested

@@ -74,6 +74,15 @@ class SourceAdaptorServiceTest {
                 }}""".formatted(PATIENT_ID, organizationId);
     }
 
+    private static String consentEntryWithFacilityDisplay(String organizationId, String facilityDisplayName) {
+        return """
+                {"resource": {
+                  "resourceType": "Consent", "id": "VCR-20260901-57098420", "status": "active",
+                  "patient": {"reference": "Patient/%s"},
+                  "organization": [{"reference": "Organization/%s", "display": "%s"}]
+                }}""".formatted(PATIENT_ID, organizationId, facilityDisplayName);
+    }
+
     private static final String OBSERVATION_ENTRY = """
             {"resource": {"resourceType": "Observation", "id": "obs-001", "status": "final",
               "subject": {"reference": "Patient/%s"}}}""".formatted(PATIENT_ID);
@@ -124,6 +133,20 @@ class SourceAdaptorServiceTest {
             assertThat(bundleEntryResult.cloudEventToForward().subject()).isEqualTo(PATIENT_ID);
             assertThat(bundleEntryResult.cloudEventToForward().facilityid()).isEqualTo(ALLOWED_ORGANIZATION_ID);
             assertThat(bundleEntryResult.cloudEventToForward().source()).isEqualTo("tiberbu");
+        }
+
+        @Test
+        @DisplayName("the organization reference's display field threads through to the CloudEvent's facilityname")
+        void facilityDisplayNameThreadsThroughToTheCloudEvent() {
+            SourceAdaptorService sourceAdaptorService = sourceAdaptorServiceWithAllowlist();
+
+            List<BundleEntryResult> bundleEntryResults = sourceAdaptorService.processBundleEntries(
+                    inboundRequestWithBody(envelope("trace-001", PATIENT_ENTRY,
+                            consentEntryWithFacilityDisplay(ALLOWED_ORGANIZATION_ID, "Kamiriithu Health Centre"))));
+
+            assertThat(bundleEntryResults).hasSize(1);
+            assertThat(bundleEntryResults.get(0).cloudEventToForward().facilityid()).isEqualTo(ALLOWED_ORGANIZATION_ID);
+            assertThat(bundleEntryResults.get(0).cloudEventToForward().facilityname()).isEqualTo("Kamiriithu Health Centre");
         }
 
         @Test

@@ -88,6 +88,7 @@ public class CloudEventEnvelopeBuilder {
                 eventTime,
                 DATA_CONTENT_TYPE,
                 sourceMetadata.facilityId(),
+                sourceMetadata.facilityName(),
                 null,
                 sourceMetadata.correlationId(),
                 data);

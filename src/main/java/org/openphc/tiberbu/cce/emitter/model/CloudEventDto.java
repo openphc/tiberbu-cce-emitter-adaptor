@@ -27,11 +27,14 @@ import com.fasterxml.jackson.databind.JsonNode;
  *   "time": "2026-09-01T11:55:42.118Z",
  *   "datacontenttype": "application/fhir+json",
  *   "facilityid": "FAC-0001",
+ *   "facilityname": "Kamiriithu Health Centre",
  *   "correlationid": "7f3c9b12-4d5e-4a6b-8c7d-9e0f1a2b3c4d",
  *   "data": { "resourceType": "Consent", ... }
  * }
  * }</pre>
- * — {@code sourceeventid} is entirely absent, not present with a null value.
+ * — {@code sourceeventid} is entirely absent, not present with a null value;
+ * {@code facilityname} is absent the same way whenever the resolved
+ * organization reference carries no {@code display}.
  *
  * @param specversion     always {@code "1.0"}
  * @param id              the deterministic event ID from {@code EventIdGenerator}
@@ -45,6 +48,10 @@ import com.fasterxml.jackson.databind.JsonNode;
  * @param datacontenttype  always {@code "application/fhir+json"}
  * @param facilityid       from {@code FacilityIdExtractor}; {@code null} when
  *                         the resource has no {@code organization} reference
+ * @param facilityname     from {@code FacilityIdExtractor}, the same
+ *                         organization reference's {@code display} field;
+ *                         {@code null} whenever {@link #facilityid} is, and
+ *                         also when the reference carries no display
  * @param sourceeventid    always {@code null} — tibERbu sends no per-event
  *                         header; kept as a field only so the attribute name
  *                         exists in the schema, never populated
@@ -61,6 +68,7 @@ public record CloudEventDto(
         String time,
         String datacontenttype,
         String facilityid,
+        String facilityname,
         String sourceeventid,
         String correlationid,
         JsonNode data) {

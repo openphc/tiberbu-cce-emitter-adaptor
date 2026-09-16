@@ -16,7 +16,8 @@ The adaptor outputs CloudEvents v1.0-compliant JSON to the CCE Collector.
 | `time` | string (ISO-8601) | Recommended | Adaptor | Event creation timestamp in UTC |
 | `datacontenttype` | string | Recommended | Static | Always `"application/fhir+json"` |
 | `data` | object | Recommended | From FHIR resource | FHIR R4 resource JSON |
-| `facilityid` | string | Optional | FHIR resource | Facility ID, via `FacilityIdExtractor`: the resource's `organization` reference (reflective `getOrganization()`), based on real tibERbu `Consent` payloads. A `ResourceType/` prefix is stripped (`Organization/1302` → `1302`). `null` when the resource has no `organization` reference (e.g. it has no such field at all, or the field is unpopulated). |
+| `facilityid` | string | Optional | FHIR resource | Facility ID, via `FacilityIdExtractor`: the resource's organization-equivalent reference — `Consent.organization` (`getOrganization()`), `Encounter.serviceProvider` (`getServiceProvider()`), `EpisodeOfCare.managingOrganization` (`getManagingOrganization()`), or `ServiceRequest.performer` (`getPerformer()`) — based on a real survey of tibERbu production payloads. `performer` is a union reference (Practitioner\|Organization\|...), also declared by `Observation` with real `Practitioner/` values — a reference is only ever accepted here when its `ResourceType/` prefix is literally `Organization` (a bare id with no prefix at all is still accepted as-is). A `ResourceType/` prefix is stripped (`Organization/1302` → `1302`). `null` when the resource has none of these references (e.g. it has no such field at all, the field is unpopulated, or every candidate reference is prefixed with some resource type other than `Organization`). |
+| `facilityname` | string | Optional | FHIR resource | Facility display name, via `FacilityIdExtractor`, read from the same organization-equivalent reference's `display` field as `facilityid` — one resolution pass covers both (mirrors `FacilityService.upsertFacility()` in cce-compliance-service, which extracts the same two values the same way). `null` whenever `facilityid` is, and also when the reference carries no `display` — a known facility ID with an unknown name is a normal outcome, not an extraction failure. |
 | `sourceeventid` | string | Optional | *(not populated)* | Not populated |
 | `correlationid` | string | Recommended | Adaptor-generated | Adaptor-generated UUID |
 | `protocolinstanceid` | string | Optional | Usually null | Protocol instance — emitter normally does not set this |
@@ -28,7 +29,7 @@ The adaptor outputs CloudEvents v1.0-compliant JSON to the CCE Collector.
 | Rule | Detail |
 |------|--------|
 | **Adaptor populates all required fields** | The adaptor's core responsibility is to populate `id`, `source`, `type`, `subject`, `time`, `datacontenttype`, and `data` for correct downstream processing by the Compliance Service. |
-| **Extension attributes are lowercase** | Per CloudEvents spec, custom extension attributes use `lowercase` without separators: `facilityid`, `sourceeventid`, `correlationid`, `protocolinstanceid`, etc. |
+| **Extension attributes are lowercase** | Per CloudEvents spec, custom extension attributes use `lowercase` without separators: `facilityid`, `facilityname`, `sourceeventid`, `correlationid`, `protocolinstanceid`, etc. |
 
 ### 1.3 Sample CloudEvent
 
@@ -42,6 +43,7 @@ The adaptor outputs CloudEvents v1.0-compliant JSON to the CCE Collector.
   "time": "2026-09-01T11:55:42.118Z",
   "datacontenttype": "application/fhir+json",
   "facilityid": "FAC-0001",
+  "facilityname": "Kamiriithu Health Centre",
   "correlationid": "7f3c9b12-4d5e-4a6b-8c7d-9e0f1a2b3c4d",
   "data": {
     "resourceType": "Consent",
@@ -129,7 +131,7 @@ Prefix: `cce.emitter.facility-filter`
 
 **Skip behaviour:** Events with a facility ID that is not in the allowlist return `200 OK` with `status: "skipped"` — they are not forwarded to the Collector. A skip is a normal outcome, not an error. Events with no facility ID are passed through unconditionally — only events that carry a resolved facility ID are subject to filtering.
 
-`FacilityIdExtractor` resolves the facility ID from the resource's `organization` reference, found reflectively (`getOrganization()`) with no hardcoded per-resource-type mapping — the same approach `PatientIdExtractor` uses for `subject`/`patient`. HAPI generates two shapes for this accessor depending on resource type: a single `Reference`, or a `List<Reference>` (e.g. `Consent`) — the first populated entry is used. Based on real tibERbu data.
+`FacilityIdExtractor` resolves the facility ID reflectively, trying three accessor names in order — `getOrganization()`, `getServiceProvider()`, `getManagingOrganization()` — the same multi-accessor approach `PatientIdExtractor` uses for `subject`/`patient`. A real survey of every resource type actually seen in tibERbu's production `inbound_event_log` found exactly three that carry one of these: `Consent.organization` (a `List<Reference>` — the first populated entry is used), `Encounter.serviceProvider`, and `EpisodeOfCare.managingOrganization` (both a single `Reference`). Every other resource type seen (`AllergyIntolerance`, `Condition`, `MedicationRequest`, `Observation`) declares none of the three and resolves to `null` — including `MedicationDispense` and `Procedure`, which carry a `location` reference instead. That one is deliberately excluded: `location` points to a `Location/`, not an `Organization/`, and the two are not treated as interchangeable.
 
 A `ResourceType/` prefix is stripped generically so `Organization/1302` resolves to `1302`; a bare ID with no prefix passes through unchanged. When a reference carries no reference string, `identifier.value` is used instead. Resources with no `organization` reference — either because the resource type doesn't declare the field at all (e.g. `Observation`, `Encounter`), or the field exists but is unpopulated — resolve to `null` and always pass through.
 
