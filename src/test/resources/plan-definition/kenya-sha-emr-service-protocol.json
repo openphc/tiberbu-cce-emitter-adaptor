@@ -226,7 +226,7 @@
                       "valueInteger": 1
                     }
                   ],
-                  "description": "Vitals bundle (temp, HR, RR, height, weight, BMI, SpO2, systolic/diastolic BP), one Observation per vital sharing a common effectiveDateTime. NSHR payloads emit these under a distinct sub-Encounter from the visit Encounter, and may arrive a day or more after visit-encounter for this data source - hence the wider tolerance.",
+                  "description": "Vitals bundle (temp, HR, RR, height, weight, BMI, SpO2, systolic/diastolic BP), one Observation per vital sharing a common effectiveDateTime. NSHR payloads emit these under a distinct sub-Encounter from the visit Encounter, and may arrive a day or more after visit-encounter for this data source - hence the wider tolerance. Optional (could): per the Sept 2026 Kenya PlanDefinition follow-up, Triage (vitals) depends on clinical/administrative choice - only Registration and Consent are unconditionally mandatory, with diagnosis becoming mandatory once the patient reaches consultation.",
                   "timingTiming": {
                     "repeat": {
                       "count": 1,
@@ -247,7 +247,7 @@
                       }
                     }
                   ],
-                  "requiredBehavior": "must"
+                  "requiredBehavior": "could"
                 },
                 {
                   "id": "diagnosis",
@@ -430,7 +430,7 @@
                           }
                         }
                       ],
-                      "requiredBehavior": "must",
+                      "requiredBehavior": "could",
                       "action": [
                         {
                           "id": "medication-administration",
@@ -491,15 +491,15 @@
                               }
                             }
                           ],
-                          "requiredBehavior": "must"
+                          "requiredBehavior": "could"
                         }
                       ]
                     }
                   ]
                 },
                 {
-                  "id": "procedure",
-                  "title": "Therapeutic Procedure",
+                  "id": "lab-order-request",
+                  "title": "Lab Order",
                   "type": {
                     "coding": [
                       {
@@ -512,21 +512,22 @@
                     {
                       "data": [
                         {
-                          "type": "Procedure",
+                          "type": "ServiceRequest",
                           "codeFilter": [
                             {
                               "code": [
                                 {
-                                  "code": "THERAPEUTIC-PROCEDURE",
-                                  "system": "https://nshr-uat.sha.go.ke/fhir/CodeSystem/procedure-code-cs"
+                                  "code": "108252007",
+                                  "system": "http://snomed.info/sct",
+                                  "display": "Laboratory procedure"
                                 }
                               ],
-                              "path": "code"
+                              "path": "category"
                             },
                             {
                               "code": [
                                 {
-                                  "code": "completed"
+                                  "code": "active"
                                 }
                               ],
                               "path": "status"
@@ -534,7 +535,7 @@
                           ]
                         }
                       ],
-                      "name": "procedure-trigger",
+                      "name": "lab-order-request-trigger",
                       "type": "named-event"
                     }
                   ],
@@ -544,7 +545,7 @@
                       "valueInteger": 1
                     }
                   ],
-                  "description": "Therapeutic procedure performed (e.g. wound cleaning). Matches Procedure with code THERAPEUTIC-PROCEDURE and status completed - not every visit includes a procedure, so this is optional. Sample payload lists the same performer twice in Procedure.performer - likely a source duplication, not two distinct performers.",
+                  "description": "Lab test ordered. Matches ServiceRequest with status active and category 108252007 (Laboratory procedure) - distinguishes a lab order from a procedure order, which uses category 387713003 instead. Optional: not every visit includes a lab order. Only the order stage is modeled here - no sample payload yet exists for the test-execution/result-generation/result-verification stages of the lab workflow.",
                   "timingTiming": {
                     "repeat": {
                       "count": 1,
@@ -566,6 +567,149 @@
                     }
                   ],
                   "requiredBehavior": "could"
+                },
+                {
+                  "id": "procedure-order-request",
+                  "title": "Procedure Order",
+                  "type": {
+                    "coding": [
+                      {
+                        "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                        "code": "step"
+                      }
+                    ]
+                  },
+                  "trigger": [
+                    {
+                      "data": [
+                        {
+                          "type": "ServiceRequest",
+                          "codeFilter": [
+                            {
+                              "code": [
+                                {
+                                  "code": "387713003",
+                                  "system": "http://snomed.info/sct",
+                                  "display": "Surgical procedure"
+                                }
+                              ],
+                              "path": "category"
+                            },
+                            {
+                              "code": [
+                                {
+                                  "code": "active"
+                                }
+                              ],
+                              "path": "status"
+                            }
+                          ]
+                        }
+                      ],
+                      "name": "procedure-order-request-trigger",
+                      "type": "named-event"
+                    }
+                  ],
+                  "extension": [
+                    {
+                      "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
+                      "valueInteger": 1
+                    }
+                  ],
+                  "description": "Procedure ordered. Matches ServiceRequest with status active and category 387713003 (Surgical procedure) - distinguishes a procedure order from a lab order, which uses category 108252007 instead. Optional: not every visit includes a procedure order. Sample order and sample completion (see procedure below) are unrelated mock payloads for different patients/encounters, not a linked pair - the relatedAction/tolerance below expresses the expected real-world sequencing, not something inferred from those samples.",
+                  "timingTiming": {
+                    "repeat": {
+                      "count": 1,
+                      "period": 1,
+                      "frequency": 1,
+                      "periodUnit": "d"
+                    }
+                  },
+                  "relatedAction": [
+                    {
+                      "actionId": "diagnosis",
+                      "relationship": "after-end",
+                      "offsetDuration": {
+                        "code": "d",
+                        "unit": "d",
+                        "value": 0,
+                        "system": "http://unitsofmeasure.org"
+                      }
+                    }
+                  ],
+                  "requiredBehavior": "could",
+                  "action": [
+                    {
+                      "id": "procedure",
+                      "title": "Therapeutic Procedure",
+                      "type": {
+                        "coding": [
+                          {
+                            "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                            "code": "step"
+                          }
+                        ]
+                      },
+                      "trigger": [
+                        {
+                          "data": [
+                            {
+                              "type": "Procedure",
+                              "codeFilter": [
+                                {
+                                  "code": [
+                                    {
+                                      "code": "THERAPEUTIC-PROCEDURE",
+                                      "system": "https://nshr-uat.sha.go.ke/fhir/CodeSystem/procedure-code-cs"
+                                    }
+                                  ],
+                                  "path": "code"
+                                },
+                                {
+                                  "code": [
+                                    {
+                                      "code": "completed"
+                                    }
+                                  ],
+                                  "path": "status"
+                                }
+                              ]
+                            }
+                          ],
+                          "name": "procedure-trigger",
+                          "type": "named-event"
+                        }
+                      ],
+                      "extension": [
+                        {
+                          "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
+                          "valueInteger": 1
+                        }
+                      ],
+                      "description": "Therapeutic procedure performed (e.g. wound cleaning). Matches Procedure with code THERAPEUTIC-PROCEDURE and status completed - not every visit includes a procedure, so this is optional. Sample payload lists the same performer twice in Procedure.performer - likely a source duplication, not two distinct performers. Links back conceptually to procedure-order-request, though the sample order/completion payloads are unrelated mock data rather than an actual linked pair.",
+                      "timingTiming": {
+                        "repeat": {
+                          "count": 1,
+                          "period": 1,
+                          "frequency": 1,
+                          "periodUnit": "d"
+                        }
+                      },
+                      "relatedAction": [
+                        {
+                          "actionId": "procedure-order-request",
+                          "relationship": "after-end",
+                          "offsetDuration": {
+                            "code": "d",
+                            "unit": "d",
+                            "value": 0,
+                            "system": "http://unitsofmeasure.org"
+                          }
+                        }
+                      ],
+                      "requiredBehavior": "could"
+                    }
+                  ]
                 }
               ]
             }
