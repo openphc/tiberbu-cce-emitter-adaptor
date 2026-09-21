@@ -57,6 +57,10 @@ public class CollectorForwardingService {
         this.eventsPath = collectorProperties.eventsPath();
         this.collectorLatencyTimer = Timer.builder("tiberbu.cce.emitter.collector.latency")
                 .description("Collector forwarding round-trip latency")
+                // Required for the p50/p95/p99 histogram_quantile() queries in docs/monitoring-alerting.md
+                // (dashboard panels and the TiberbuCceEmitterHighLatency alert) — without this, the timer
+                // only exposes _sum/_count/_max, no _bucket series, so those queries return no data.
+                .publishPercentileHistogram()
                 .register(meterRegistry);
         this.collectorRetriesExhaustedCounter = Counter.builder("tiberbu.cce.emitter.collector.retries")
                 .description("Retry attempts exhausted (all retries failed)")
