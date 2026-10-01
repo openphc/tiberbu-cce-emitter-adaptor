@@ -122,7 +122,7 @@
               "offsetDuration": {
                 "code": "d",
                 "unit": "d",
-                "value": 0,
+                "value": 1,
                 "system": "http://unitsofmeasure.org"
               }
             }
@@ -155,6 +155,16 @@
                             }
                           ],
                           "path": "class"
+                        },
+                        {
+                          "code": [
+                            {
+                              "code": "184047000",
+                              "system": "http://snomed.info/sct",
+                              "display": "Patient registration"
+                            }
+                          ],
+                          "path": "type"
                         }
                       ]
                     }
@@ -163,7 +173,7 @@
                   "type": "named-event"
                 }
               ],
-              "description": "Outpatient check-in. Matches Encounter with class AMB (ambulatory). NSHR payloads link this to EpisodeOfCare via Encounter.episodeOfCare rather than a type-coded visit trigger.",
+              "description": "Outpatient check-in. Matches the registration Encounter only: class AMB (ambulatory) and type SNOMED 184047000 (Patient registration). Other ambulatory encounters of the visit (e.g. Triage, SNOMED 272465004) don't match this step. NSHR payloads link the encounters to EpisodeOfCare via Encounter.episodeOfCare.",
               "timingTiming": {
                 "repeat": {
                   "count": 1,
@@ -179,7 +189,7 @@
                   "offsetDuration": {
                     "code": "d",
                     "unit": "d",
-                    "value": 0,
+                    "value": 1,
                     "system": "http://unitsofmeasure.org"
                   }
                 }
@@ -218,12 +228,6 @@
                       ],
                       "name": "vitals-trigger",
                       "type": "named-event"
-                    }
-                  ],
-                  "extension": [
-                    {
-                      "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
-                      "valueInteger": 1
                     }
                   ],
                   "description": "Vitals bundle (temp, HR, RR, height, weight, BMI, SpO2, systolic/diastolic BP), one Observation per vital sharing a common effectiveDateTime. NSHR payloads emit these under a distinct sub-Encounter from the visit Encounter, and may arrive a day or more after visit-encounter for this data source - hence the wider tolerance. Optional (could): per the Sept 2026 Kenya PlanDefinition follow-up, Triage (vitals) depends on clinical/administrative choice - only Registration and Consent are unconditionally mandatory, with diagnosis becoming mandatory once the patient reaches consultation.",
@@ -293,7 +297,7 @@
                       "offsetDuration": {
                         "code": "d",
                         "unit": "d",
-                        "value": 0,
+                        "value": 1,
                         "system": "http://unitsofmeasure.org"
                       }
                     }
@@ -340,12 +344,6 @@
                       ],
                       "name": "medication-request-trigger",
                       "type": "named-event"
-                    }
-                  ],
-                  "extension": [
-                    {
-                      "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
-                      "valueInteger": 1
                     }
                   ],
                   "description": "Medication prescribed. Matches MedicationRequest with status active and category outpatient (medicationReference itself is deliberately not filtered on - it would restrict this to one specific drug rather than any medication order). Optional (could): not every diagnosis leads to a prescription (advice-only visits, referrals, lab-only visits) - medication-dispense/medication-administration remain must, since once a medication genuinely is requested, tracking whether it's dispensed and administered is a real compliance concern. Note: observed sample data has MedicationDispense.whenHandedOver preceding this request's dispenseRequest.validityPeriod.start by ~1.5 minutes - a likely source data-quality issue, not a protocol design choice.",
@@ -401,12 +399,6 @@
                           ],
                           "name": "medication-dispense-trigger",
                           "type": "named-event"
-                        }
-                      ],
-                      "extension": [
-                        {
-                          "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
-                          "valueInteger": 1
                         }
                       ],
                       "description": "Medication dispensed to patient. Matches completed MedicationDispense. Links back via authorizingPrescription to medication-request.",
@@ -476,12 +468,6 @@
                       "type": "named-event"
                     }
                   ],
-                  "extension": [
-                    {
-                      "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
-                      "valueInteger": 1
-                    }
-                  ],
                   "description": "Lab test ordered. Matches ServiceRequest with status active and category 108252007 (Laboratory procedure) - distinguishes a lab order from a procedure order, which uses category 387713003 instead. Optional: not every visit includes a lab order. Only the order stage is modeled here - no sample payload yet exists for the test-execution/result-generation/result-verification stages of the lab workflow.",
                   "timingTiming": {
                     "repeat": {
@@ -545,12 +531,6 @@
                           ],
                           "name": "lab-results-trigger",
                           "type": "named-event"
-                        }
-                      ],
-                      "extension": [
-                        {
-                          "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
-                          "valueInteger": 1
                         }
                       ],
                       "description": "Lab result recorded. Matches Observation with category laboratory and status final - e.g. Kenya SHR sample 'Blood Slide For Malaria: POSITIVE'. Not linked by basedOn to lab-order-request in sample data (the Matcher Service correlates by patient, not by resource reference, consistent with the rest of this protocol). Optional (could): only meaningful once a lab order has actually been placed.",
@@ -620,12 +600,6 @@
                       "type": "named-event"
                     }
                   ],
-                  "extension": [
-                    {
-                      "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
-                      "valueInteger": 1
-                    }
-                  ],
                   "description": "Procedure ordered. Matches ServiceRequest with status active and category 387713003 (Surgical procedure) - distinguishes a procedure order from a lab order, which uses category 108252007 instead. Optional: not every visit includes a procedure order. Sample order and sample completion (see procedure below) are unrelated mock payloads for different patients/encounters, not a linked pair - the relatedAction/tolerance below expresses the expected real-world sequencing, not something inferred from those samples.",
                   "timingTiming": {
                     "repeat": {
@@ -681,12 +655,6 @@
                           "type": "named-event"
                         }
                       ],
-                      "extension": [
-                        {
-                          "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
-                          "valueInteger": 1
-                        }
-                      ],
                       "description": "Procedure performed - any type (therapeutic, diagnostic, or surgical), not just therapeutic. Matches any completed Procedure regardless of code (resource-type + status only), the same pattern used by the diagnosis step - dev data shows THERAPEUTIC-PROCEDURE, DIAGNOSTIC-PROCEDURE and SURGICAL-PROCEDURE codes under procedure-code-cs, plus other coding systems (e.g. a SNOMED-coded Tonsillectomy), so restricting to one code silently missed the rest. Not every visit includes a procedure, so this is optional. Links back conceptually to procedure-order-request, though the sample order/completion payloads are unrelated mock data rather than an actual linked pair.",
                       "timingTiming": {
                         "repeat": {
@@ -711,6 +679,12 @@
                       "requiredBehavior": "could"
                     }
                   ]
+                }
+              ],
+              "extension": [
+                {
+                  "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
+                  "valueInteger": 1
                 }
               ]
             }
