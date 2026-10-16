@@ -81,7 +81,9 @@ sequenceDiagram
     Svc-->>EvtSvc: List<BundleEntryResult> (forwarded-pending, skipped, and failed entries, in bundle order)
     deactivate Svc
 
-    loop Each BundleEntryResult ready to forward
+    Note over EvtSvc: BundleEntryForwardingOrder: sort by clinical time,<br/>then EpisodeOfCare / Encounter first on a tie, then bundle order
+
+    loop Each BundleEntryResult ready to forward, in that order
         Note over EvtSvc: MDC: correlationId, source, eventType, subject
         EvtSvc->>Fwd: forward(cloudEvent)
         activate Fwd
@@ -96,7 +98,7 @@ sequenceDiagram
     end
 
     alt At least one entry forwarded
-        EvtSvc->>EvtSvc: ProcessedEventsResponse.from(results) — status "processed"
+        EvtSvc->>EvtSvc: ProcessedEventsResponse.from(results, back in bundle order) — status "processed"
         EvtSvc-->>Ctrl: InboundOutcome(202, body)
     else No entry forwarded, but at least one was skipped
         EvtSvc->>EvtSvc: ProcessedEventsResponse.from(results) — status "skipped"

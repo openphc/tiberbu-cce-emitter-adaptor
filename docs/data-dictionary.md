@@ -291,7 +291,33 @@ Returned whenever at least one candidate entry was attempted and the request as 
 
 Every candidate bundle entry is adapted and forwarded independently by `SourceAdaptorService`/`InboundEventService` — one entry's facility-filter denial or failure never prevents a sibling entry in the same bundle from being attempted. This is deliberate: forwarding to the Collector is an irreversible side effect, so if entry A already forwarded successfully by the time entry B fails, there is no way to "undo" A. The response therefore reports exactly what happened to each entry, and the request as a whole is treated as a success (`202`, or `200 skipped`) as long as **at least one** entry forwarded or was cleanly filtered — reporting the whole request as failed in that situation would misrepresent something that already happened.
 
-Only when **every** candidate entry ends in a genuine failure (none forwarded, none filtered) does `InboundEventService` instead re-throw — the first entry's original exception, letting it flow through the normal exception-handling path (API Reference §4) rather than inventing a separate all-failed response shape.
+Only when **every** candidate entry ends in a genuine failure (none forwarded, none filtered) does `InboundEventService` instead re-throw — the original exception of the failed entry earliest in the bundle, letting it flow through the normal exception-handling path (API Reference §4) rather than inventing a separate all-failed response shape.
+
+### 5.5 Forwarding order
+
+tibERbu lists a bundle's children before their parents (e.g. a ServiceRequest, then its Encounter, then the EpisodeOfCare). `InboundEventService` forwards the candidate entries to the Collector by clinical time instead (`BundleEntryForwardingOrder`):
+
+1. **Clinical time**, earliest first: the same field per resource type that the Collector and Matcher use (`ClinicalEventTimeExtractor`, a copy of the cce-common-util class of the same name). A date-only value counts as midnight of that date.
+2. On a tie, **parent first**: EpisodeOfCare, then Encounter, then everything else.
+3. Then **bundle order**.
+
+An entry without a clinical time is forwarded after every entry that has one. Facility-filtered and failed entries are never forwarded; they are handled after the forwarded ones. The response's `events[]` stays in bundle order.
+
+#### Expected forwarding order by case
+
+Each case is one bundle in tibERbu's own order — entry 0 a Patient (always skipped), then entry 1 a ServiceRequest, entry 2 its Encounter, entry 3 the EpisodeOfCare. Times are the clinical-time fields of §5.5 (ServiceRequest `authoredOn`, Encounter and EpisodeOfCare `period.start`).
+
+| Case | ServiceRequest (1) | Encounter (2) | EpisodeOfCare (3) | Forwarded to the Collector | Decided by |
+|---|---|---|---|---|---|
+| Real times, parents earlier | `2026-10-15T13:56:40+03:00` | `2026-10-15T13:53:00+03:00` | `2026-10-15T13:51:30+03:00` | EpisodeOfCare → Encounter → ServiceRequest | clinical time |
+| Date-only times, all the same day | `2026-10-15` | `2026-10-15` | `2026-10-15` | EpisodeOfCare → Encounter → ServiceRequest | tie → parent first |
+| Child earlier than its parents | `2026-10-15T13:00:00+03:00` | `2026-10-15T13:53:00+03:00` | `2026-10-15T13:51:30+03:00` | ServiceRequest → EpisodeOfCare → Encounter | clinical time (followed as sent) |
+| Child has no clinical time | *(no `authoredOn`)* | `2026-10-15T13:53:00+03:00` | `2026-10-15T13:51:30+03:00` | EpisodeOfCare → Encounter → ServiceRequest | untimed goes last |
+| Same time, same resource type (e.g. five vital-sign Observations) | — | — | — | entry order (1, 2, 3, …) | tie → bundle order |
+| ServiceRequest facility-filtered | *(skipped)* | `2026-10-15T13:53:00+03:00` | `2026-10-15T13:51:30+03:00` | EpisodeOfCare → Encounter; the ServiceRequest is not sent | not forwarded |
+| Same bundle sent again, unchanged | same | same | same | EpisodeOfCare → Encounter → ServiceRequest, each answered `duplicate` | event id from content (§1.1) |
+
+In every case the response lists the entries as 1, 2, 3.
 
 ## 6. Metrics Reference
 

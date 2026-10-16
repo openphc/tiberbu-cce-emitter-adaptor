@@ -145,6 +145,7 @@ org.openphc.tiberbu.cce.emitter/
 ├── fhir/                                          # FHIR utilities
 │   ├── BundleEntryExtractor.java                  #   Bundle-first extraction: skip any confirmed Patient entry, yield rest as BundleEntry
 │   ├── BundleEntry.java                           #   (index, resourceJson, resourceType) for one extracted entry
+│   ├── ClinicalEventTimeExtractor.java            #   Clinical time of a resource — copy of cce-common-util's class of the same name
 │   ├── FhirResourceParser.java                    #   HAPI FHIR parse of one entry's resourceJson (fresh IParser per call)
 │   ├── FacilityIdExtractor.java                   #   Facility ID: the resource's organization reference, based on real tibERbu data
 │   └── PatientIdExtractor.java                    #   Extract patient identifier from FHIR resources
@@ -154,7 +155,8 @@ org.openphc.tiberbu.cce.emitter/
 │   └── FacilityFilterProperties.java              #   @ConfigurationProperties("cce.emitter.facility-filter")
 │
 ├── service/                                       # Business logic
-│   ├── InboundEventService.java                   #   Orchestrates pipeline: process → forward (+ metrics + MDC)
+│   ├── InboundEventService.java                   #   Orchestrates pipeline: process → order → forward (+ metrics + MDC)
+│   ├── BundleEntryForwardingOrder.java            #   Forwarding order: clinical time, then EpisodeOfCare/Encounter first on a tie, then bundle order
 │   ├── CollectorForwardingService.java            #   @Retryable: POST to Collector via RestClient (+ latency timer)
 │   └── CollectorTokenService.java                 #   OAuth2 client_credentials token management (Keycloak)
 │

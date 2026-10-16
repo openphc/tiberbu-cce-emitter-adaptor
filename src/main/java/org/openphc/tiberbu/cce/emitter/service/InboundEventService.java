@@ -6,6 +6,7 @@ import org.openphc.tiberbu.cce.emitter.adaptor.SourceAdaptorService;
 import org.openphc.tiberbu.cce.emitter.config.EmitterProperties;
 import org.openphc.tiberbu.cce.emitter.exception.CollectorClientException;
 import org.openphc.tiberbu.cce.emitter.exception.CollectorForwardingException;
+import org.openphc.tiberbu.cce.emitter.fhir.ClinicalEventTimeExtractor;
 import org.openphc.tiberbu.cce.emitter.model.BundleEntryResult;
 import org.openphc.tiberbu.cce.emitter.model.CloudEventDto;
 import org.openphc.tiberbu.cce.emitter.model.CollectorResponse;
@@ -19,7 +20,10 @@ import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Orchestrates one inbound request: bundle extraction and per-entry
@@ -72,6 +76,7 @@ public class InboundEventService {
     private final Counter entriesDuplicateCounter;
     private final Counter entriesReceivedCounter;
     private final String sourceIdentifier;
+    private final BundleEntryForwardingOrder bundleEntryForwardingOrder;
 
     public InboundEventService(
             SourceAdaptorService sourceAdaptorService,
@@ -82,6 +87,7 @@ public class InboundEventService {
         this.collectorForwardingService = collectorForwardingService;
         this.meterRegistry = meterRegistry;
         this.sourceIdentifier = emitterProperties.source();
+        this.bundleEntryForwardingOrder = new BundleEntryForwardingOrder(new ClinicalEventTimeExtractor(meterRegistry));
         this.entriesForwardedCounter = Counter.builder("tiberbu.cce.emitter.entries.forwarded")
                 .description("CloudEvents that reached the Collector (accepted or duplicate)")
                 .tag("source", sourceIdentifier)
@@ -124,8 +130,18 @@ public class InboundEventService {
             return InboundOutcome.ignored(NON_PROCESSABLE_PAYLOAD);
         }
 
+        // entries to forward are sent to the Collector by clinical time (parents first on a tie);
+        // facility-filtered and failed entries are never sent, so they are only handled after them
+        Map<Boolean, List<BundleEntryResult>> entriesByReadyToForward =
+                bundleEntryResults.stream().collect(Collectors.partitioningBy(BundleEntryResult::isReadyToForward));
+        List<BundleEntryResult> sortedBundleEntryResults = new ArrayList<>(
+                bundleEntryForwardingOrder.sortIntoForwardingOrder(entriesByReadyToForward.get(true)));
+        sortedBundleEntryResults.addAll(entriesByReadyToForward.get(false));
+
         List<TransformationResult> transformationResults = new ArrayList<>(bundleEntryResults.size());
-        RuntimeException firstFailureCause = forwardEach(bundleEntryResults, transformationResults); // fills transformationResults, in bundle order
+        RuntimeException firstFailureCause = forwardEach(sortedBundleEntryResults, transformationResults);
+        // the response lists every entry's outcome in bundle order, not forwarding order
+        transformationResults.sort(Comparator.comparingInt(TransformationResult::bundleEntryIndex));
 
         long forwardedCount = countByOutcome(transformationResults, TransformationResult.OUTCOME_FORWARDED);
         if (forwardedCount > 0) {
@@ -148,9 +164,10 @@ public class InboundEventService {
     }
 
     /**
-     * Forwards every ready-to-forward entry, and passes every already-terminal
-     * entry straight through — building {@code transformationResults} in bundle order and
-     * returning the first genuine failure's cause (or {@code null} if none
+     * Forwards every ready-to-forward entry, in the order given, and passes
+     * every already-terminal entry straight through — building {@code
+     * transformationResults} in that same order and returning the cause of the
+     * genuine failure earliest in the bundle (or {@code null} if none
      * occurred), for {@link #process}'s all-failed check.
      *
      * <p>Example — {@code bundleEntryResults} of size 2, entry 0 already
@@ -162,6 +179,7 @@ public class InboundEventService {
      */
     private RuntimeException forwardEach(List<BundleEntryResult> bundleEntryResults, List<TransformationResult> transformationResults) {
         RuntimeException firstFailureCause = null;
+        int firstFailureBundleEntryIndex = Integer.MAX_VALUE; // entries arrive in forwarding order, not bundle order
 
         for (BundleEntryResult bundleEntryResult : bundleEntryResults) {
             if (!bundleEntryResult.isReadyToForward()) {
@@ -174,8 +192,10 @@ public class InboundEventService {
                     // collector.retries (5xx exhausted); this is what's left uncounted before this metric existed
                     recordAdaptationFailure(bundleEntryResult.failureCause());
                 }
-                if (firstFailureCause == null) {
-                    firstFailureCause = bundleEntryResult.failureCause(); // null for a SKIPPED entry, non-null for a FAILED one
+                // failureCause is null for a SKIPPED entry, non-null for a FAILED one
+                if (bundleEntryResult.failureCause() != null && bundleEntryResult.bundleEntryIndex() < firstFailureBundleEntryIndex) {
+                    firstFailureCause = bundleEntryResult.failureCause();
+                    firstFailureBundleEntryIndex = bundleEntryResult.bundleEntryIndex();
                 }
                 continue;
             }
@@ -197,8 +217,9 @@ public class InboundEventService {
                 // this entry becomes FAILED, but the loop still attempts every remaining sibling entry
                 transformationResults.add(TransformationResult.failed(
                         bundleEntryResult.bundleEntryIndex(), cloudEvent.type(), cloudEvent.subject(), forwardingFailure.getMessage()));
-                if (firstFailureCause == null) {
+                if (bundleEntryResult.bundleEntryIndex() < firstFailureBundleEntryIndex) {
                     firstFailureCause = forwardingFailure;
+                    firstFailureBundleEntryIndex = bundleEntryResult.bundleEntryIndex();
                 }
             } finally {
                 MDC.clear(); // never leaks into the next entry's log lines, forwarded or not
