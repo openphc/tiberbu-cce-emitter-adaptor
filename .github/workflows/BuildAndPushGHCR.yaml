@@ -54,8 +54,11 @@ jobs:
     - name: Build project
       run: ./gradlew build
 
+    # Built from the repository Dockerfile, the image docs/monitoring-alerting.md documents
+    # (non-root user, curl HEALTHCHECK on /actuator/health/liveness). bootBuildImage would produce
+    # a buildpack image with no shell, curl or HEALTHCHECK.
     - name: Build container image
-      run: ./gradlew bootBuildImage --imageName=${IMAGE_URI}:${{ steps.version.outputs.version_tag }}
+      run: docker build -t ${IMAGE_URI}:${{ steps.version.outputs.version_tag }} .
 
     - name: Tag image as latest
       run: docker tag ${IMAGE_URI}:${{ steps.version.outputs.version_tag }} ${IMAGE_URI}:latest
