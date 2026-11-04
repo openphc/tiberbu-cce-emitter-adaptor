@@ -1,6 +1,8 @@
 package org.openphc.tiberbu.cce.emitter.fhir;
 
+import org.hl7.fhir.instance.model.api.IBase;
 import org.hl7.fhir.instance.model.api.IBaseResource;
+import org.hl7.fhir.r4.model.BackboneElement;
 import org.hl7.fhir.r4.model.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,13 +40,17 @@ import java.util.List;
  *   <li>{@code Composition.custodian} — {@code getCustodian()}, a single
  *       {@code Reference}: R4 "the organization responsible for ongoing
  *       maintenance of and access to the composition" (85 of 93 Compositions)</li>
+ *   <li>{@code MedicationDispense.performer[].actor} and {@code
+ *       Procedure.performer[].actor} then {@code .onBehalfOf} — {@code
+ *       getPerformer()} returns performer components here, not references;
+ *       see {@link #PERFORMER_COMPONENT_REFERENCE_METHOD_NAMES}</li>
  * </ul>
  * Every other resource type seen (AllergyIntolerance, Condition,
- * MedicationRequest, MedicationDispense, Procedure) carries no Organization
- * reference in these elements and so resolves to {@code null} — a Practitioner
- * {@code requester}/{@code performer} fails the Organization gate. {@code
- * Observation.performer} is a Practitioner on all but 7 of 12,046 Observations on
- * dev; those 7 name an Organization, which is used. {@code
+ * MedicationRequest) carries no Organization reference in these elements and
+ * so resolves to {@code null} — a Practitioner {@code requester}/{@code
+ * performer}/{@code actor} fails the Organization gate. {@code
+ * Observation.performer} is usually a Practitioner only; when it also names an
+ * Organization, that is used. {@code
  * MedicationDispense} and {@code Procedure} carry a {@code location} reference
  * instead, which is deliberately NOT treated as a facility reference: {@code location}
  * points to a {@code Location/}, not an {@code Organization/}, and the two
@@ -61,12 +67,11 @@ import java.util.List;
  * RelatedPerson}, and {@code Observation} (real tibERbu traffic today, unlike
  * every resource type in the next paragraph) also declares {@code
  * getPerformer()} with that exact same union shape. Real tibERbu {@code
- * Observation} payloads populate it exclusively with {@code Practitioner/...}
- * references (confirmed in {@code artifacts/observation.json}), so {@link
- * #resolveFacilityId} rejects any reference whose {@code ResourceType/}
- * prefix isn't literally {@code "Organization"} — this is what keeps {@code
- * getPerformer()} safe to add here without misattributing an
- * {@code Observation}'s performing practitioner as its facility.
+ * Observation} payloads put the practitioner first — as a {@code
+ * Practitioner/...} reference, or by {@code identifier} alone — so {@link
+ * #resolveFacilityId} accepts only an {@code Organization/<id>} reference
+ * string — this is what keeps {@code getPerformer()} safe to add here without
+ * misattributing an {@code Observation}'s performing practitioner as its facility.
  *
  * <p><b>Known limitation, accepted for now.</b> {@code getOrganization()}
  * and {@code getManagingOrganization()} are not unique to the four types
@@ -127,17 +132,17 @@ public class FacilityIdExtractor {
             {"getOrganization", "getServiceProvider", "getManagingOrganization", "getCustodian", "getRequester",
              "getPerformer"};
 
+    /** References read, in order, from a {@code MedicationDispense}/{@code Procedure} performer component. */
+    private static final String[] PERFORMER_COMPONENT_REFERENCE_METHOD_NAMES = {"getActor", "getOnBehalfOf"};
+
     /**
      * The one FHIR resource type name a prefixed reference string is accepted
      * for. This is what makes {@code getPerformer} safe to include in {@link
      * #ORGANIZATION_ACCESSOR_METHOD_NAMES} despite it being a <em>union</em>
      * reference (Practitioner|PractitionerRole|Organization|CareTeam|
      * HealthcareService|Patient|Device|RelatedPerson on both {@code
-     * ServiceRequest.performer} and {@code Observation.performer}): real
-     * tibERbu {@code Observation} payloads populate {@code performer} with
-     * {@code Practitioner/...} references exclusively (confirmed in {@code
-     * artifacts/observation.json}), and this check rejects exactly those —
-     * only a reference literally prefixed {@code "Organization/"} is ever
+     * ServiceRequest.performer} and {@code Observation.performer}): only a
+     * reference string literally prefixed {@code "Organization/"} is ever
      * accepted as a facility.
      */
     private static final String ORGANIZATION_RESOURCE_TYPE = "Organization";
@@ -215,7 +220,42 @@ public class FacilityIdExtractor {
                         if (facilityDetails != null) {
                             return facilityDetails;
                         }
+                    } else if (referenceCandidate instanceof BackboneElement performerComponent) {
+                        // MedicationDispense/Procedure performer[] holds components, not
+                        // references — the reference sits one level down, in actor/onBehalfOf.
+                        FacilityDetails facilityDetails = performerComponentToFacilityDetails(performerComponent);
+                        if (facilityDetails != null) {
+                            return facilityDetails;
+                        }
                     }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolves a performer component — the element type of {@code performer[]}
+     * on {@code MedicationDispense} and {@code Procedure} — by trying {@code
+     * actor}, then {@code onBehalfOf} (declared on {@code Procedure} only). A
+     * Practitioner {@code actor} fails the Organization gate, so the walk falls
+     * through to the Organization it acted for.
+     *
+     * <p>Example — a real tibERbu {@code Procedure.performer[0]} of {@code
+     * {"actor": {"reference": "Practitioner/KE-SHRPR-..."}, "onBehalfOf":
+     * {"reference": "Organization/KE-SHRF-5FF8CB67-ACDA-4705-AD03", "display":
+     * "LIKONI SUBCOUNTY HOSPITAL"}}} resolves to that {@code onBehalfOf}
+     * Organization and its display.
+     *
+     * @return the facility details, or {@code null} when neither reference is an Organization
+     */
+    private FacilityDetails performerComponentToFacilityDetails(BackboneElement performerComponent) {
+        for (String performerComponentReferenceMethodName : PERFORMER_COMPONENT_REFERENCE_METHOD_NAMES) {
+            if (invokeOrganizationAccessorIfPresent(performerComponent, performerComponentReferenceMethodName)
+                    instanceof Reference reference) {
+                FacilityDetails facilityDetails = referenceToFacilityDetails(reference);
+                if (facilityDetails != null) {
+                    return facilityDetails;
                 }
             }
         }
@@ -232,7 +272,7 @@ public class FacilityIdExtractor {
      * @return the raw return value of the accessor, or {@code null} if the
      *         method does not exist or invoking it unexpectedly failed
      */
-    private Object invokeOrganizationAccessorIfPresent(IBaseResource resource, String organizationAccessorMethodName) {
+    private Object invokeOrganizationAccessorIfPresent(IBase resource, String organizationAccessorMethodName) {
         try {
             Method organizationAccessorMethod = resource.getClass().getMethod(organizationAccessorMethodName);
             return organizationAccessorMethod.invoke(resource);
@@ -272,65 +312,30 @@ public class FacilityIdExtractor {
     }
 
     /**
-     * Extracts the bare facility ID from a {@link Reference}.
+     * Extracts the facility ID from a {@link Reference}: the part after
+     * {@code Organization/} in its reference string. Any other reference
+     * resolves to {@code null} — another resource type ({@code
+     * "Practitioner/PUID-0000195-9"}), a bare id with no prefix, or no reference
+     * string at all. {@code identifier} is never read: it carries no resource
+     * type, so a Practitioner's registration number cannot be told apart from a
+     * facility code.
      *
-     * <p>Step 1: when {@code reference.getReference()} contains a {@code
-     * ResourceType/} prefix, it is accepted <strong>only</strong> when that
-     * prefix is literally {@link #ORGANIZATION_RESOURCE_TYPE} — {@code
-     * "Organization/1302"} resolves to {@code "1302"}, but {@code
-     * "Practitioner/1302"} resolves to nothing here at all (step 1 does not
-     * fire), not to {@code "1302"}. A reference with no {@code /} at all
-     * (a bare id, e.g. {@code "1302"}) has no type to validate and passes
-     * through unchanged, exactly as before.
-     *
-     * <p>Step 2: falls back to {@code identifier.value} (e.g. {@code
-     * {"identifier": {"value": "1302"}}}) whenever step 1 found nothing —
-     * either no reference string at all, a reference string whose {@code
-     * Organization/} prefix stripped to blank (e.g. {@code "Organization/"}
-     * with nothing after it), or a reference string prefixed with some other
-     * resource type entirely.
-     *
-     * <p>Example (step 1, the common case): given {@code {"reference":
-     * "Organization/KE-SHRF-D601602F-C9AC-4CC5-9347"}}, step 1 returns {@code
-     * "KE-SHRF-D601602F-C9AC-4CC5-9347"} immediately.
-     *
-     * <p>Example (step 1, the rejection this exists for): given {@code
-     * {"reference": "Practitioner/PUID-0000195-9"}} — a real {@code
-     * Observation.performer} entry — step 1 does not match (the prefix isn't
-     * {@code "Organization"}), so this falls through to step 2, and on to
-     * {@code null} when (as in that real payload) no identifier is present
-     * either. Without this check, the old blind "segment after the last /"
-     * logic would have wrongly returned {@code "PUID-0000195-9"} as a
-     * facility ID.
-     *
-     * <p>Example (step 2, the fallback): given {@code {"identifier": {"value":
-     * "1302"}}} — no {@code "reference"} field at all — step 1 finds nothing;
-     * step 2 then reads {@code identifier.value} and returns {@code "1302"}.
+     * <p>Example: {@code {"reference": "Organization/KE-SHRF-D601602F-C9AC-4CC5-9347"}}
+     * resolves to {@code "KE-SHRF-D601602F-C9AC-4CC5-9347"}. A real tibERbu
+     * {@code Observation.performer[0]} of {@code {"display": "Amina Yusuf",
+     * "identifier": {"value": "RN-52817 (demo)"}}} resolves to {@code null}, so
+     * the walk carries on to the {@code Organization/} reference in {@code
+     * performer[1]}.
      */
     private String resolveFacilityId(Reference reference) {
-        // Step 1: prefer the reference string, but only a bare id (no "/" at
-        // all) or one whose "ResourceType/" prefix is literally "Organization".
-        if (reference.hasReference()) {
-            String rawReference = reference.getReference();
-            int lastSlashIndex = rawReference.lastIndexOf('/');
-            if (lastSlashIndex < 0) {
-                if (!rawReference.isBlank()) {
-                    return rawReference;
-                }
-            } else if (ORGANIZATION_RESOURCE_TYPE.equals(rawReference.substring(0, lastSlashIndex))) {
-                String facilityId = rawReference.substring(lastSlashIndex + 1);
-                if (!facilityId.isBlank()) {
-                    return facilityId;
-                }
-            }
+        // Step 1: only a reference string starting "Organization/" can name a facility —
+        // a Practitioner/ reference, a bare id, or an identifier-only reference cannot.
+        String organizationReferencePrefix = ORGANIZATION_RESOURCE_TYPE + "/";
+        if (!reference.hasReference() || !reference.getReference().startsWith(organizationReferencePrefix)) {
+            return null;
         }
-        // Step 2: no usable Organization reference string — fall back to
-        // identifier.value, the alternate way a FHIR reference can carry an identity.
-        if (reference.hasIdentifier() && reference.getIdentifier().hasValue()) {
-            return reference.getIdentifier().getValue();
-        }
-        // Step 3: neither a usable reference string nor an identifier — this
-        // Reference carries no extractable facility identity.
-        return null;
+        // Step 2: strip the prefix; "Organization/" with nothing after it names no facility.
+        String facilityId = reference.getReference().substring(organizationReferencePrefix.length());
+        return facilityId.isBlank() ? null : facilityId;
     }
 }

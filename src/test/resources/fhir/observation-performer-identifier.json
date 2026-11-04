@@ -1,0 +1,56 @@
+{
+  "id": "9a2a2ddd-ebe1-560b-9712-944b4168c43a",
+  "code": {
+    "coding": [
+      {
+        "code": "8310-5",
+        "system": "http://loinc.org",
+        "display": "Body temperature"
+      }
+    ]
+  },
+  "meta": {
+    "profile": [
+      "https://ilm-dev.dha.go.ke/core/StructureDefinition/kenya-core-observation"
+    ],
+    "security": [
+      {
+        "code": "N",
+        "system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality"
+      }
+    ]
+  },
+  "status": "final",
+  "subject": {
+    "reference": "Patient/KE-SHRP-2DFF0330-3993-43DF-BFDE"
+  },
+  "category": [
+    {
+      "coding": [
+        {
+          "code": "vital-signs",
+          "system": "http://terminology.hl7.org/CodeSystem/observation-category"
+        }
+      ]
+    }
+  ],
+  "encounter": {
+    "reference": "Encounter/1ec48eda-0f86-5599-b6f3-fd1fc453dc8b"
+  },
+  "performer": [
+    {
+      "display": "Amina Yusuf",
+      "identifier": {
+        "value": "RN-52817 (demo)",
+        "assigner": {
+          "display": "NCK"
+        }
+      }
+    },
+    {
+      "reference": "Organization/KE-SHRF-E6EF4EF0-B3C0-4352-B334"
+    }
+  ],
+  "resourceType": "Observation",
+  "effectiveDateTime": "2026-10-30T09:45:32.609928+00:00"
+}
