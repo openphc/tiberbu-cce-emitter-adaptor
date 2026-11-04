@@ -40,13 +40,16 @@ import java.util.List;
  *   <li>{@code Composition.custodian} — {@code getCustodian()}, a single
  *       {@code Reference}: R4 "the organization responsible for ongoing
  *       maintenance of and access to the composition" (85 of 93 Compositions)</li>
+ *   <li>{@code MedicationRequest.performer} — {@code getPerformer()}, a single
+ *       {@code Reference}, reached after a Practitioner {@code requester}
+ *       fails the Organization gate</li>
  *   <li>{@code MedicationDispense.performer[].actor} and {@code
  *       Procedure.performer[].actor} then {@code .onBehalfOf} — {@code
  *       getPerformer()} returns performer components here, not references;
  *       see {@link #PERFORMER_COMPONENT_REFERENCE_METHOD_NAMES}</li>
  * </ul>
- * Every other resource type seen (AllergyIntolerance, Condition,
- * MedicationRequest) carries no Organization reference in these elements and
+ * Every other resource type seen (AllergyIntolerance, Condition) carries no
+ * Organization reference in these elements and
  * so resolves to {@code null} — a Practitioner {@code requester}/{@code
  * performer}/{@code actor} fails the Organization gate. {@code
  * Observation.performer} is usually a Practitioner only; when it also names an
