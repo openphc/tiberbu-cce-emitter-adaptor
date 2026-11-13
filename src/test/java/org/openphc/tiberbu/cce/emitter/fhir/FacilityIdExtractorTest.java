@@ -34,16 +34,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The accessors {@link FacilityIdExtractor} recognizes — {@code Consent.organization},
  * {@code Encounter.serviceProvider}, {@code EpisodeOfCare.managingOrganization},
- * {@code Composition.custodian}, {@code ServiceRequest.requester} then {@code .performer}.
- * {@code MedicationDispense} and {@code Procedure} carry a {@code location}
- * reference instead, which points at a {@code Location}, not an {@code
- * Organization} — deliberately not treated as equivalent; see {@link
- * DeliberatelyUnsupportedResourceTypes}. {@code Observation} also declares
- * {@code getPerformer()}, but real payloads populate it with {@code
- * Practitioner/} references, never {@code Organization/} — see {@link
- * ServiceRequestPerformerResolution} for the reference-type gate that keeps
- * this correctly resolving to {@code null} rather than misattributing a
- * practitioner as a facility.
+ * {@code Composition.custodian}, {@code ServiceRequest.requester} then {@code .performer},
+ * {@code Observation.performer}, and the {@code actor}/{@code onBehalfOf} of
+ * {@code MedicationDispense}/{@code Procedure} performer components (see {@link
+ * PerformerComponentResolution}). Their {@code location} reference points at a
+ * {@code Location}, not an {@code Organization} — deliberately not treated as
+ * equivalent; see {@link DeliberatelyUnsupportedResourceTypes}. Only an {@code
+ * Organization/<id>} reference string is ever a facility — see {@link
+ * OrganizationReferenceStringOnly} — which keeps a Practitioner {@code performer}
+ * from being misattributed as a facility.
  *
  * <p>Every hand-built {@link Reference} in this file below {@link
  * RealTibErbuPayload} leaves {@code display} unset on purpose, so {@link
@@ -335,38 +334,109 @@ class FacilityIdExtractorTest {
     }
 
     @Nested
-    @DisplayName("prefix handling")
-    class PrefixHandling {
+    @DisplayName("only an Organization/<id> reference string is a facility")
+    class OrganizationReferenceStringOnly {
 
         @Test
-        @DisplayName("a reference with no Organization/ prefix passes through unchanged")
-        void referenceWithNoPrefixPassesThroughUnchanged() {
+        @DisplayName("a bare id with no Organization/ prefix resolves to null")
+        void bareIdWithNoPrefixResolvesToNull() {
             Consent consent = new Consent();
             consent.setOrganization(List.of(new Reference("0030")));
 
-            assertThat(facilityIdExtractor.extract(consent)).isEqualTo(new FacilityDetails("0030", null));
+            assertThat(facilityIdExtractor.extract(consent)).isNull();
         }
 
         @Test
-        @DisplayName("a reference with no reference string falls back to identifier.value")
-        void referenceWithNoReferenceStringFallsBackToIdentifierValue() {
+        @DisplayName("a reference given by identifier alone resolves to null — identifier.value is never read")
+        void identifierOnlyReferenceResolvesToNull() {
             Consent consent = new Consent();
             Reference organizationByIdentifier = new Reference();
             organizationByIdentifier.getIdentifier().setValue(FACILITY_ID);
             consent.setOrganization(List.of(organizationByIdentifier));
 
-            assertThat(facilityIdExtractor.extract(consent)).isEqualTo(new FacilityDetails(FACILITY_ID, null));
+            assertThat(facilityIdExtractor.extract(consent)).isNull();
         }
 
         @Test
-        @DisplayName("a reference string that strips to blank still falls back to identifier.value, not straight to null")
-        void referenceThatStripsToBlankStillFallsBackToIdentifierValue() {
+        @DisplayName("Organization/ with nothing after it resolves to null, even with an identifier present")
+        void blankOrganizationReferenceResolvesToNullDespiteIdentifier() {
             Consent consent = new Consent();
             Reference organizationWithBlankReferenceAndAnIdentifier = new Reference("Organization/");
             organizationWithBlankReferenceAndAnIdentifier.getIdentifier().setValue(FACILITY_ID);
             consent.setOrganization(List.of(organizationWithBlankReferenceAndAnIdentifier));
 
-            assertThat(facilityIdExtractor.extract(consent)).isEqualTo(new FacilityDetails(FACILITY_ID, null));
+            assertThat(facilityIdExtractor.extract(consent)).isNull();
+        }
+
+        /**
+         * The shape of a real tibERbu vital-signs {@code Observation}: {@code
+         * performer[0]} is the nurse, given only by display and registration-number
+         * identifier, and {@code performer[1]} is the facility. The identifier used to
+         * be read as the facility ID and the nurse's name as the facility name.
+         */
+        @Test
+        @DisplayName("a Practitioner given by identifier ahead of an Organization/ performer is skipped, not taken as the facility")
+        void identifierOnlyPractitionerPerformerIsSkippedForTheOrganizationAfterIt() {
+            Observation observation = new Observation();
+            Reference nurseByIdentifier = new Reference();
+            nurseByIdentifier.setDisplay("Nurse Name");
+            nurseByIdentifier.getIdentifier().setValue("RN-00000");
+            observation.setPerformer(List.of(nurseByIdentifier, new Reference("Organization/" + FACILITY_ID)));
+
+            assertThat(facilityIdExtractor.extract(observation)).isEqualTo(new FacilityDetails(FACILITY_ID, null));
+        }
+    }
+
+    @Nested
+    @DisplayName("performer components — the reference sits in actor / onBehalfOf")
+    class PerformerComponentResolution {
+
+        @Test
+        @DisplayName("MedicationDispense.performer[].actor resolves when it is an Organization/ reference")
+        void medicationDispensePerformerActorOrganizationResolves() {
+            MedicationDispense medicationDispense = new MedicationDispense();
+            medicationDispense.addPerformer().setActor(new Reference("Organization/" + FACILITY_ID));
+
+            assertThat(facilityIdExtractor.extract(medicationDispense)).isEqualTo(new FacilityDetails(FACILITY_ID, null));
+        }
+
+        @Test
+        @DisplayName("a MedicationDispense whose only performer actor is a Practitioner resolves to null")
+        void medicationDispensePractitionerActorResolvesToNull() {
+            MedicationDispense medicationDispense = new MedicationDispense();
+            medicationDispense.addPerformer().setActor(new Reference("Practitioner/practitioner-id"));
+
+            assertThat(facilityIdExtractor.extract(medicationDispense)).isNull();
+        }
+
+        @Test
+        @DisplayName("Procedure.performer[].actor resolves, with its display as the facility name")
+        void procedurePerformerActorOrganizationResolves() {
+            Procedure procedure = new Procedure();
+            procedure.addPerformer().setActor(new Reference("Organization/" + FACILITY_ID).setDisplay("Facility Name"));
+
+            assertThat(facilityIdExtractor.extract(procedure)).isEqualTo(new FacilityDetails(FACILITY_ID, "Facility Name"));
+        }
+
+        @Test
+        @DisplayName("a Practitioner Procedure.performer[].actor falls through to the Organization in onBehalfOf")
+        void procedurePractitionerActorFallsThroughToOnBehalfOf() {
+            Procedure procedure = new Procedure();
+            Procedure.ProcedurePerformerComponent performer = procedure.addPerformer();
+            performer.setActor(new Reference("Practitioner/practitioner-id").setDisplay("Practitioner Name"));
+            performer.setOnBehalfOf(new Reference("Organization/" + FACILITY_ID).setDisplay("Facility Name"));
+
+            assertThat(facilityIdExtractor.extract(procedure)).isEqualTo(new FacilityDetails(FACILITY_ID, "Facility Name"));
+        }
+
+        @Test
+        @DisplayName("a performer component with no Organization/ reference is skipped for a later one that has it")
+        void performerComponentWithoutOrganizationIsSkippedForALaterOne() {
+            Procedure procedure = new Procedure();
+            procedure.addPerformer().setActor(new Reference("Practitioner/practitioner-id"));
+            procedure.addPerformer().setActor(new Reference("Organization/" + FACILITY_ID));
+
+            assertThat(facilityIdExtractor.extract(procedure)).isEqualTo(new FacilityDetails(FACILITY_ID, null));
         }
     }
 
@@ -498,6 +568,69 @@ class FacilityIdExtractorTest {
 
             assertThat(facilityIdExtractor.extract(parsedServiceRequest))
                     .isEqualTo(new FacilityDetails("KE-SHRF-4E89A130-D458-4D7A-9C6D", null));
+        }
+
+        /**
+         * A real tibERbu vital-signs {@code Observation}, pulled from {@code
+         * inbound_event_log.raw_payload} (the {@code data} field) on dev: {@code
+         * performer[0]} is the nurse, given only by {@code display} and a
+         * registration-number {@code identifier}, and {@code performer[1]} is the
+         * facility. Before only {@code Organization/} reference strings counted,
+         * this resolved to {@code facilityid="RN-52817 (demo)"}, {@code
+         * facilityname="Amina Yusuf"}.
+         */
+        @Test
+        @DisplayName("the real Observation with an identifier-only nurse in performer[0] extracts the Organization in performer[1], not the nurse")
+        void extractsFromTheRealParsedObservationResource() {
+            IBaseResource parsedObservation = fhirResourceParser.parse(loadFixture("observation-performer-identifier.json"));
+
+            assertThat(facilityIdExtractor.extract(parsedObservation))
+                    .isEqualTo(new FacilityDetails("KE-SHRF-E6EF4EF0-B3C0-4352-B334", null));
+        }
+
+        /**
+         * A real tibERbu {@code MedicationDispense}, pulled from {@code
+         * inbound_event_log.raw_payload} on dev: the facility is in {@code
+         * performer[0].actor}, and {@code location} is a contained {@code
+         * #dispensing-location} that this extractor must not read from.
+         */
+        @Test
+        @DisplayName("the real MedicationDispense extracts the facility ID from performer[].actor, with a null name")
+        void extractsFromTheRealParsedMedicationDispenseResource() {
+            IBaseResource parsedMedicationDispense = fhirResourceParser.parse(loadFixture("medication-dispense.json"));
+
+            assertThat(facilityIdExtractor.extract(parsedMedicationDispense))
+                    .isEqualTo(new FacilityDetails("FID-17-110510-8", null));
+        }
+
+        /**
+         * A real tibERbu {@code Procedure}, pulled from {@code
+         * inbound_event_log.raw_payload} on dev: {@code performer[].actor} is a
+         * {@code Practitioner}, and the facility is the {@code onBehalfOf}
+         * Organization; {@code location} points at a different {@code Location/}
+         * id that must not be used.
+         */
+        @Test
+        @DisplayName("the real Procedure with a Practitioner actor extracts the facility ID and name from performer[].onBehalfOf")
+        void extractsFromTheRealParsedProcedureOnBehalfOfResource() {
+            IBaseResource parsedProcedure = fhirResourceParser.parse(loadFixture("procedure-performer-on-behalf-of.json"));
+
+            assertThat(facilityIdExtractor.extract(parsedProcedure)).isEqualTo(new FacilityDetails(
+                    "KE-SHRF-5FF8CB67-ACDA-4705-AD03", "LIKONI SUBCOUNTY HOSPITAL"));
+        }
+
+        /**
+         * A real tibERbu {@code Procedure}, pulled from {@code
+         * inbound_event_log.raw_payload} on dev, whose {@code performer[].actor}
+         * is the Organization itself.
+         */
+        @Test
+        @DisplayName("the real Procedure with an Organization actor extracts the facility ID and name from performer[].actor")
+        void extractsFromTheRealParsedProcedureActorResource() {
+            IBaseResource parsedProcedure = fhirResourceParser.parse(loadFixture("procedure-performer-actor.json"));
+
+            assertThat(facilityIdExtractor.extract(parsedProcedure)).isEqualTo(new FacilityDetails(
+                    "KE-SHRF-F75DBB8A-E36C-44DE-95F4", "MBAGATHI COUNTY REFERRAL HOSPITAL"));
         }
 
         /** Reads {@code src/test/resources/fhir/<fileName>} from the classpath — the fixture files themselves are shared with {@code PatientIdExtractorTest}, though each test class loads them independently. */

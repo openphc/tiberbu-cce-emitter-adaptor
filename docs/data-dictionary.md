@@ -16,7 +16,7 @@ The adaptor outputs CloudEvents v1.0-compliant JSON to the CCE Collector.
 | `time` | string (ISO-8601) | Recommended | Adaptor | Event creation timestamp in UTC |
 | `datacontenttype` | string | Recommended | Static | Always `"application/fhir+json"` |
 | `data` | object | Recommended | From FHIR resource | FHIR R4 resource JSON, with its clinical content removed (§3.7). The event `id` is derived from the complete resource before removal. |
-| `facilityid` | string | Optional | FHIR resource | Facility ID, via `FacilityIdExtractor`: the resource's Organization reference, read from, in order, `Consent.organization`, `Encounter.serviceProvider`, `EpisodeOfCare.managingOrganization`, `Composition.custodian`, `ServiceRequest.requester` then `ServiceRequest.performer`. Only an `Organization/` reference (or a bare id) is accepted; a Practitioner `requester`/`performer` is skipped. A `ResourceType/` prefix is stripped (`Organization/1302` → `1302`). `null` when the resource carries no Organization reference in these elements (e.g. `Observation`, `Condition`, `MedicationRequest`, `MedicationDispense`). |
+| `facilityid` | string | Optional | FHIR resource | Facility ID, via `FacilityIdExtractor`: the resource's Organization reference, read from, in order, `Consent.organization`, `Encounter.serviceProvider`, `EpisodeOfCare.managingOrganization`, `Composition.custodian`, `ServiceRequest.requester` then `ServiceRequest.performer`, `Observation.performer`, `MedicationRequest.requester` then `MedicationRequest.performer`, `MedicationDispense.performer[].actor`, `Procedure.performer[].actor` then `.onBehalfOf`. Only an `Organization/<id>` reference string is accepted, with the prefix stripped (`Organization/1302` → `1302`); any other reference is skipped and the next one tried. `null` when the resource carries no Organization reference in these elements (e.g. `Condition`). |
 | `facilityname` | string | Optional | FHIR resource | Facility display name, via `FacilityIdExtractor`, read from the same organization-equivalent reference's `display` field as `facilityid` — one resolution pass covers both (mirrors `FacilityService.upsertFacility()` in cce-compliance-service, which extracts the same two values the same way). `null` whenever `facilityid` is, and also when the reference carries no `display` — a known facility ID with an unknown name is a normal outcome, not an extraction failure. |
 | `sourceeventid` | string | Optional | *(not populated)* | Not populated |
 | `correlationid` | string | Recommended | `meta.traceId` | The inbound envelope's `meta.traceId`; a generated UUID when it is absent, blank or over 100 characters. The same for every entry of one bundle |
@@ -138,10 +138,14 @@ Prefix: `cce.emitter.facility-filter`
 | EpisodeOfCare | `managingOrganization` | |
 | Composition | `custodian` | R4: the organization responsible for the document |
 | ServiceRequest | `requester`, then `performer` | the ordering facility first; a Practitioner requester (the usual case) falls through to `performer` |
+| Observation | `performer` | usually a Practitioner; the Organization is a later entry |
+| MedicationRequest | `requester`, then `performer` | the requester is a Practitioner; the Organization is in `performer` |
+| MedicationDispense | `performer[].actor` | |
+| Procedure | `performer[].actor`, then `performer[].onBehalfOf` | a Practitioner actor falls through to the Organization it acted for |
 
-Every other resource type seen (`AllergyIntolerance`, `Condition`, `MedicationRequest`, `MedicationDispense`, `Observation`, `Procedure`) carries no Organization reference in these elements and resolves to `null`. `MedicationDispense.location` and `Procedure.location` point to a `Location/`, which is not treated as a facility.
+Every other resource type seen (`AllergyIntolerance`, `Condition`, `MedicationAdministration`, `CarePlan`, `ImagingStudy`, `Immunization`, `DiagnosticReport`) carries no Organization reference in these elements and resolves to `null`. `MedicationDispense.location` and `Procedure.location` point to a `Location/`, which is not treated as a facility.
 
-A reference is accepted only when its `ResourceType/` prefix is `Organization` (stripped: `Organization/1302` → `1302`) or it is a bare id with no prefix. When it has no usable reference string, `identifier.value` is used. Resources with no Organization reference resolve to `null` and always pass through.
+A reference is a facility only when its reference string is `Organization/<id>` (stripped: `Organization/1302` → `1302`). Any other reference — another resource type, a bare id, or one given by `identifier` alone — is skipped and the next candidate tried; `identifier.value` is never read, because it carries no resource type (a real Observation performer carries a nurse's registration number there). Resources with no Organization reference resolve to `null` and always pass through.
 
 ### 3.4 Server Properties
 

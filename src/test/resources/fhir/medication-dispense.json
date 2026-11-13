@@ -1,0 +1,64 @@
+{
+  "id": "a315028c-4e30-43bb-8746-cfa40f95fbb9",
+  "meta": {
+    "profile": [
+      "https://ilm-dev.dha.go.ke/erx/StructureDefinition/ke-medication-dispense"
+    ],
+    "security": [
+      {
+        "code": "N",
+        "system": "http://terminology.hl7.org/CodeSystem/v3-Confidentiality",
+        "display": "Normal"
+      }
+    ]
+  },
+  "type": {
+    "coding": [
+      {
+        "code": "FFC",
+        "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+        "display": "First Fill - Complete"
+      }
+    ]
+  },
+  "status": "completed",
+  "context": {
+    "reference": "Encounter/a3138576-9393-4281-9944-8f6dfce2e51c"
+  },
+  "subject": {
+    "reference": "Patient/KE-SHRP-4F5232ED-3A2D-47ED-BB5B"
+  },
+  "location": {
+    "display": "ZZ Demo Level 4 (sandbox)",
+    "reference": "#dispensing-location"
+  },
+  "performer": [
+    {
+      "actor": {
+        "reference": "Organization/FID-17-110510-8"
+      }
+    }
+  ],
+  "identifier": [
+    {
+      "value": "a315028c-4e30-43bb-8746-cfa40f95fbb9",
+      "system": "https://ilm-hie.dha.go.ke/fhir/NamingSystem/dispense-identifier"
+    }
+  ],
+  "resourceType": "MedicationDispense",
+  "substitution": {
+    "wasSubstituted": false
+  },
+  "whenPrepared": "2026-10-27T16:05:23+03:00",
+  "whenHandedOver": "2026-10-27T16:05:25+03:00",
+  "supportingInformation": [
+    {
+      "reference": "Medication/batch-a2f2c2cb-d9d9-45e2-8334-4c243349d408"
+    }
+  ],
+  "authorizingPrescription": [
+    {
+      "reference": "MedicationRequest/rx-a313b311-5a82-40a8-8fca-e6b1e3ae7ff3"
+    }
+  ]
+}
